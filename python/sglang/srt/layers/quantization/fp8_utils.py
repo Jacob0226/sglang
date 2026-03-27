@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from enum import Enum
 from functools import lru_cache
-from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, Union
 
 import torch
 
@@ -853,9 +853,9 @@ def _pack_mxfp8_scales(scale_u8: torch.Tensor) -> torch.Tensor:
     assert scale_u8.dim() == 2, f"Expected 2D scale tensor, got {scale_u8.dim()}D"
     scale_u8 = scale_u8.contiguous()
     m, k_groups = scale_u8.shape
-    assert (
-        k_groups % 4 == 0
-    ), f"{k_groups=} must be divisible by 4 (K must be multiple of 128)"
+    assert k_groups % 4 == 0, (
+        f"{k_groups=} must be divisible by 4 (K must be multiple of 128)"
+    )
 
     scale_m = ceil_div(m, 128)
     if m % 128 != 0:
@@ -1163,9 +1163,9 @@ def quant_weight_ue8m0(
     weight_block_size: List[int],
 ):
     assert weight_block_size == [128, 128]
-    assert (
-        weight_dequant.dtype == torch.bfloat16
-    ), f"{weight_dequant.dtype=} {weight_dequant.shape=}"
+    assert weight_dequant.dtype == torch.bfloat16, (
+        f"{weight_dequant.dtype=} {weight_dequant.shape=}"
+    )
 
     *batch_dims, n, k = weight_dequant.shape
 
@@ -1239,9 +1239,9 @@ def inverse_transform_scale_ue8m0(sf_packed, mn):
     sf_fp32 = _inverse_transform_scale_ue8m0_impl(sf_packed)
     # Can call consistency check every time since this is only called on startup
     sf_packed_recreated = transform_scale_ue8m0(sf_fp32, mn=mn, use_torch_impl=True)
-    assert torch.all(
-        sf_packed == sf_packed_recreated
-    ), f"{sf_packed=} {sf_packed_recreated=} {sf_fp32=}"
+    assert torch.all(sf_packed == sf_packed_recreated), (
+        f"{sf_packed=} {sf_packed_recreated=} {sf_fp32=}"
+    )
     return sf_fp32
 
 
@@ -1541,7 +1541,7 @@ def can_auto_enable_marlin_fp8() -> bool:
 
 
 def apply_fp8_ptpc_linear(
-    input: torch.Tensor,
+    input: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
     weight: torch.Tensor,
     weight_scale: torch.Tensor,
     input_scale: Optional[torch.Tensor] = None,
@@ -1552,6 +1552,18 @@ def apply_fp8_ptpc_linear(
     pad_output: Optional[bool] = None,
     compressed_tensor_quant: bool = False,
 ) -> torch.Tensor:
+    # Handle pre-quantized (fp8_tensor, scale) tuple from fused RMSNorm+Quant
+    if isinstance(input, tuple):
+        q_input, x_scale = input
+        q_input = q_input.view(-1, q_input.shape[-1])
+        output_shape = [*q_input.shape[:-1], weight.shape[0]]
+        output = aiter.gemm_a8w8_bpreshuffle(
+            q_input, weight, x_scale, weight_scale, None, torch.bfloat16
+        )
+        if bias is not None:
+            output = output + bias
+        return output.view(*output_shape)
+
     # View input as 2D matrix for fp8 methods
     input_2d = input.view(-1, input.shape[-1])
 
