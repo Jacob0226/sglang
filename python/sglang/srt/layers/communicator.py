@@ -83,6 +83,7 @@ _use_ag_after_qlora = envs.SGLANG_USE_AG_AFTER_QLORA.get()
 if _use_aiter:
     from aiter.ops.rmsnorm import add_rmsnorm_quant as _aiter_add_rmsnorm_quant
     from aiter.ops.rmsnorm import rmsnorm_quant as _aiter_rmsnorm_quant
+
     from sglang.srt.layers.quantization.fp8_kernel import fp8_dtype as _aiter_fp8_dtype
 
     if _is_gfx95_supported:
@@ -618,9 +619,9 @@ class LayerCommunicator:
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if hidden_states.shape[0] == 0:
             return hidden_states, hidden_states
-        assert hidden_states.shape[0] % self._context.tp_size == 0, (
-            f"Expected total tokens {hidden_states.shape[0]} % tp_size {self._context.tp_size} to be 0"
-        )
+        assert (
+            hidden_states.shape[0] % self._context.tp_size == 0
+        ), f"Expected total tokens {hidden_states.shape[0]} % tp_size {self._context.tp_size} to be 0"
         local_tokens = hidden_states.shape[0] // self._context.tp_size
         output = hidden_states.new_empty(local_tokens, *hidden_states.shape[1:])
         get_tp_group().reduce_scatter_tensor(output, hidden_states)

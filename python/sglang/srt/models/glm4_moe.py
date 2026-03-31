@@ -791,10 +791,11 @@ class Glm4MoeDecoderLayer(nn.Module):
             linear_layer.quant_method, "scheme", None
         )
         if scheme is not None:
+            from compressed_tensors.quantization import QuantizationStrategy
+
             from sglang.srt.layers.quantization.compressed_tensors.schemes.compressed_tensors_w8a8_fp8 import (
                 CompressedTensorsW8A8Fp8,
             )
-            from compressed_tensors.quantization import QuantizationStrategy
 
             if (
                 isinstance(scheme, CompressedTensorsW8A8Fp8)
@@ -1122,9 +1123,9 @@ class Glm4MoeForCausalLM(nn.Module):
             return
 
         self.num_fused_shared_experts = self.config.n_shared_experts
-        assert self.num_fused_shared_experts == 1, (
-            "Only 1 fused shared expert is supported for Glm4MoeForCausalLM"
-        )
+        assert (
+            self.num_fused_shared_experts == 1
+        ), "Only 1 fused shared expert is supported for Glm4MoeForCausalLM"
         log_info_on_rank0(logger, "Shared experts fusion optimization enabled.")
 
     @torch.no_grad()
