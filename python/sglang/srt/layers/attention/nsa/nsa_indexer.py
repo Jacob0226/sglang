@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from einops import rearrange
@@ -251,7 +251,9 @@ class Indexer(MultiPlatformOp):
         else:
             yield
 
-    def _weights_proj_bf16_in_fp32_out(self, x: torch.Tensor) -> torch.Tensor:
+    def _weights_proj_bf16_in_fp32_out(self, x) -> torch.Tensor:
+        if _is_hip and isinstance(x, tuple) and len(x) == 3:
+            x = x[2]
         if deep_gemm_wrapper.ENABLE_JIT_DEEPGEMM:
             weight = self.weights_proj.weight
             out = torch.empty(
@@ -274,7 +276,9 @@ class Indexer(MultiPlatformOp):
         return weights
 
     @torch.compile(dynamic=True)
-    def _get_logits_head_gate(self, x: torch.Tensor, q_scale: torch.Tensor):
+    def _get_logits_head_gate(
+        self, x: Union[torch.Tensor, Tuple[torch.Tensor, ...]], q_scale: torch.Tensor
+    ):
         weights = self._weights_proj_bf16_in_fp32_out(x)
         weights = weights * self.n_heads**-0.5
         weights = weights.unsqueeze(-1) * q_scale * self.softmax_scale
@@ -1133,9 +1137,12 @@ class Indexer(MultiPlatformOp):
                     act_quant=act_quant,
                 )
 
-            # `_get_logits_head_gate` expects a Tensor. For tuple activations, dequantize
-            # to a float tensor here (callsite), keeping `_get_logits_head_gate` backend-agnostic.
-            if isinstance(x, tuple):
+            # On HIP with 3-tuple (fp8, scale, bf16), pass directly to
+            # _get_logits_head_gate which extracts the bf16 tensor via
+            # _weights_proj_bf16_in_fp32_out, skipping FP8 dequantization.
+            if _is_hip and isinstance(x, tuple) and len(x) == 3:
+                x_for_gate = x
+            elif isinstance(x, tuple):
                 assert len(x) in (
                     2,
                     3,
