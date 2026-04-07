@@ -1534,6 +1534,7 @@ def apply_fp8_ptpc_linear(
     pad_output: Optional[bool] = None,
     compressed_tensor_quant: bool = False,
 ) -> torch.Tensor:
+    """FP8 per-token per-channel linear. Only used with the aiter (ROCm) backend."""
     # Handle pre-quantized (fp8_tensor, scale) tuple from fused RMSNorm+Quant
     if isinstance(input, tuple):
         q_input, x_scale = input

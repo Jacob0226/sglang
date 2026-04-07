@@ -104,6 +104,8 @@ def _fused_rmsnorm_fp8_per_token_quant(
 ):
     """Fused (optional residual-add +) RMSNorm + FP8 per-token quantization.
 
+    Only used with the aiter (ROCm) backend.
+
     Args:
         residual: if provided, computes hidden_states + residual before RMSNorm
                   and returns updated residual_out as second element.
