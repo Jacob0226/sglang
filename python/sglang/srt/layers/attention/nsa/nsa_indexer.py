@@ -251,7 +251,12 @@ class Indexer(MultiPlatformOp):
         else:
             yield
 
-    def _weights_proj_bf16_in_fp32_out(self, x) -> torch.Tensor:
+    def _weights_proj_bf16_in_fp32_out(
+        self, x: Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+    ) -> torch.Tensor:
+        # HIP (ROCm) with aiter: extract the passthrough bf16 tensor from the
+        # 3-tuple (fp8, scale, bf16) produced by fused_rms_fp8_group_quant,
+        # avoiding an expensive FP8-to-bf16 dequantization.
         if _is_hip and isinstance(x, tuple) and len(x) == 3:
             x = x[2]
         if deep_gemm_wrapper.ENABLE_JIT_DEEPGEMM:
@@ -270,7 +275,9 @@ class Indexer(MultiPlatformOp):
         return weights.float()
 
     @torch.compile(dynamic=True)
-    def _project_and_scale_head_gates(self, x: torch.Tensor):
+    def _project_and_scale_head_gates(
+        self, x: Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+    ):
         weights = self._weights_proj_bf16_in_fp32_out(x)
         weights = weights * self.n_heads**-0.5
         return weights
@@ -1137,9 +1144,10 @@ class Indexer(MultiPlatformOp):
                     act_quant=act_quant,
                 )
 
-            # On HIP with 3-tuple (fp8, scale, bf16), pass directly to
-            # _get_logits_head_gate which extracts the bf16 tensor via
-            # _weights_proj_bf16_in_fp32_out, skipping FP8 dequantization.
+            # HIP (ROCm) with aiter: the 3-tuple (fp8, scale, bf16) from
+            # fused_rms_fp8_group_quant is passed directly to _get_logits_head_gate,
+            # which extracts the bf16 tensor via _weights_proj_bf16_in_fp32_out,
+            # completely skipping the FP8 dequantization path below.
             if _is_hip and isinstance(x, tuple) and len(x) == 3:
                 x_for_gate = x
             elif isinstance(x, tuple):

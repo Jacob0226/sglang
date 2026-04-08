@@ -485,6 +485,10 @@ class LayerCommunicator:
                             None,
                         )
                     elif _use_aiter and _is_gfx95_supported and ("fp8" in quant_format):
+                        # aiter (ROCm gfx95) fused RMSNorm + FP8 group quant.
+                        # When NSA is active, also preserve the unquantized bf16
+                        # output as a 3-tuple (fp8, scale, bf16) so the NSA
+                        # indexer can skip redundant FP8 dequantization.
                         _nsa_needs_bf16 = get_attn_tp_context().is_nsa
                         hidden_states, _unq_bf16, _, _res = fused_rms_fp8_group_quant(
                             hidden_states,
@@ -520,6 +524,9 @@ class LayerCommunicator:
                             residual,
                         )
                     elif _use_aiter and _is_gfx95_supported and ("fp8" in quant_format):
+                        # aiter (ROCm gfx95) fused RMSNorm + FP8 group quant
+                        # with residual addition. When NSA is active, pack
+                        # the unquantized bf16 as a 3-tuple (fp8, scale, bf16).
                         _nsa_needs_bf16 = get_attn_tp_context().is_nsa
                         hidden_states, _unq_bf16, _, residual = (
                             fused_rms_fp8_group_quant(
