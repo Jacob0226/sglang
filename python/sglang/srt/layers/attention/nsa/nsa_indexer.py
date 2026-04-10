@@ -21,6 +21,7 @@ from sglang.srt.utils import (
     ceil_align,
     get_bool_env_var,
     is_cuda,
+    is_gfx95_supported,
     is_hip,
     is_npu,
 )
@@ -31,6 +32,8 @@ _is_hip = is_hip()
 _is_npu = is_npu()
 _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 _is_fp8_fnuz = is_fp8_fnuz()
+_use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
+_is_gfx95_supported = is_gfx95_supported()
 if _is_cuda:
     try:
         import deep_gemm
@@ -254,10 +257,10 @@ class Indexer(MultiPlatformOp):
     def _weights_proj_bf16_in_fp32_out(
         self, x: Union[torch.Tensor, Tuple[torch.Tensor, ...]]
     ) -> torch.Tensor:
-        # HIP (ROCm) with aiter: extract the passthrough bf16 tensor from the
+        # aiter (ROCm gfx95): extract the passthrough bf16 tensor from the
         # 3-tuple (fp8, scale, bf16) produced by fused_rms_fp8_group_quant,
         # avoiding an expensive FP8-to-bf16 dequantization.
-        if _is_hip and isinstance(x, tuple) and len(x) == 3:
+        if _use_aiter and _is_gfx95_supported and isinstance(x, tuple) and len(x) == 3:
             x = x[2]
         if deep_gemm_wrapper.ENABLE_JIT_DEEPGEMM:
             weight = self.weights_proj.weight
@@ -1144,11 +1147,16 @@ class Indexer(MultiPlatformOp):
                     act_quant=act_quant,
                 )
 
-            # HIP (ROCm) with aiter: the 3-tuple (fp8, scale, bf16) from
+            # aiter (ROCm gfx95): the 3-tuple (fp8, scale, bf16) from
             # fused_rms_fp8_group_quant is passed directly to _get_logits_head_gate,
             # which extracts the bf16 tensor via _weights_proj_bf16_in_fp32_out,
             # completely skipping the FP8 dequantization path below.
-            if _is_hip and isinstance(x, tuple) and len(x) == 3:
+            if (
+                _use_aiter
+                and _is_gfx95_supported
+                and isinstance(x, tuple)
+                and len(x) == 3
+            ):
                 x_for_gate = x
             elif isinstance(x, tuple):
                 assert len(x) in (
