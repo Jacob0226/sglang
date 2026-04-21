@@ -50,7 +50,11 @@ def transform_index_page_table_decode_fast(
         transformed_page_table: [qo_len, topk], the transformed page table
         For out-of-bound indices in topk_indices, this should be filled with -1.
     """
-    assert page_size == 1
+    assert page_size >= 1
+    if page_size > 1:
+        return transform_index_page_table_decode_ref(
+            page_table, topk_indices, result, page_size
+        )
     assert page_table.shape[0] == topk_indices.shape[0]
     assert topk_indices.shape[1] == 2048
     qo_len = topk_indices.shape[0]
@@ -76,7 +80,7 @@ def transform_index_page_table_prefill_fast(
     page_size: int = 1,
 ) -> torch.Tensor:
     # TODO(baizhou): can be implemented with another triton kernel
-    assert page_size == 1
+    assert page_size >= 1
     result = torch.empty_like(topk_indices, dtype=torch.int32)
     assert len(extend_lens_cpu) == page_table.shape[0]
     offset = 0
@@ -97,17 +101,24 @@ def transform_index_page_table_decode_ref(
     result: Optional[torch.Tensor] = None,
     page_size: int = 1,
 ) -> torch.Tensor:
-    assert page_size == 1
+    assert page_size >= 1
     assert page_table.shape[0] == topk_indices.shape[0]
     if result is None:
         result = torch.empty_like(topk_indices, dtype=torch.int32)
     assert result.shape == topk_indices.shape
-    torch.gather(
-        page_table.to(result.dtype),
-        dim=1,
-        index=topk_indices.clamp(min=0),
-        out=result,
-    )
+    if page_size == 1:
+        torch.gather(
+            page_table.to(result.dtype),
+            dim=1,
+            index=topk_indices.clamp(min=0),
+            out=result,
+        )
+    else:
+        clamped = topk_indices.clamp(min=0)
+        page_idx = clamped // page_size
+        token_offset = clamped % page_size
+        physical_page = torch.gather(page_table.to(result.dtype), dim=1, index=page_idx)
+        result.copy_(physical_page * page_size + token_offset)
     result[topk_indices < 0] = -1
     return result
 
@@ -118,7 +129,7 @@ def transform_index_page_table_prefill_ref(
     extend_lens_cpu: List[int],
     page_size: int = 1,
 ) -> torch.Tensor:
-    assert page_size == 1
+    assert page_size >= 1
     result = torch.empty_like(topk_indices, dtype=torch.int32)
     assert len(extend_lens_cpu) == page_table.shape[0]
     offset = 0

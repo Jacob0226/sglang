@@ -430,8 +430,8 @@ class Indexer(MultiPlatformOp):
         page_size = forward_batch.token_to_kv_pool.page_size
         # NOTE(dark): blocksize = 64 is hardcoded in deep_gemm
         if _is_hip:
-            assert page_size == 1, "only support page size 1"
-            block_tables = metadata.get_page_table_1()
+            assert page_size == 16, "only support page size 16"
+            block_tables = metadata.get_page_table_64()
         else:
             assert page_size == 64, "only support page size 64"
             # NOTE(dark): this support extend/decode/decode+graph
@@ -462,7 +462,7 @@ class Indexer(MultiPlatformOp):
         assert len(q_fp8.shape) == 3
         q_fp8 = q_fp8.unsqueeze(1)  # the next_n dim is 1 now
         assert len(kv_cache_fp8.shape) == 2
-        block_kv = 1 if _is_hip else 64
+        block_kv = 16 if _is_hip else 64
         num_heads_kv = 1
         head_dim_with_sf = 132
         if _is_hip:
@@ -497,7 +497,7 @@ class Indexer(MultiPlatformOp):
                 seqlens_32,
                 block_tables,
                 max_seq_len,
-                Preshuffle=False,
+                Preshuffle=True,
                 KVBlockSize=block_kv,
             )
         else:
@@ -561,7 +561,7 @@ class Indexer(MultiPlatformOp):
 
         page_size = forward_batch.token_to_kv_pool.page_size
         if _is_hip:
-            assert page_size == 1, "only support page size 1"
+            assert page_size == 16, "only support page size 16"
         else:
             assert page_size == 64, "only support page size 64"
 
@@ -573,7 +573,7 @@ class Indexer(MultiPlatformOp):
         weights = weights.squeeze(-1)
 
         if _is_hip:
-            block_tables = metadata.get_page_table_1()
+            block_tables = metadata.get_page_table_64()
         else:
             block_tables = metadata.get_page_table_64()
 
@@ -1031,19 +1031,24 @@ class Indexer(MultiPlatformOp):
             )
             return
 
-        # Fast path: AITER fused quant + cache store (HIP, page_size=1)
+        # Fast path: AITER fused quant + cache store (HIP, page_size=16, preshuffle)
         if _use_aiter:
+            page_size = forward_batch.token_to_kv_pool.page_size
             buf = forward_batch.token_to_kv_pool.get_index_k_with_scale_buffer(
                 layer_id=layer_id
             )
-            # Reshape from (num_pages, 132) uint8 to (num_pages, 1, 132) fp8
-            # to match kernel's (num_blocks, block_size, head_dim + scale_bytes) layout
-            kv_cache = buf.unsqueeze(1).view(fp8_dtype)
+            # Reshape from (num_pages, page_size*(128+4)) uint8 to (num_pages, page_size, 132) fp8
+            kv_cache = buf.view(-1, page_size, 132).view(fp8_dtype)
             out_loc = forward_batch.out_cache_loc
             if not out_loc.is_contiguous():
                 out_loc = out_loc.contiguous()
             indexer_k_quant_and_cache(
-                key, kv_cache, out_loc, self.block_size, self.scale_fmt
+                key,
+                kv_cache,
+                out_loc,
+                self.block_size,
+                self.scale_fmt,
+                preshuffle=True,
             )
             return
 
