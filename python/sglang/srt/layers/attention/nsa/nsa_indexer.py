@@ -483,9 +483,8 @@ class Indexer(MultiPlatformOp):
             from aiter.ops.triton.pa_mqa_logits import deepgemm_fp8_paged_mqa_logits
 
             batch_size, next_n, heads, _ = q_fp8.shape
-            logits = torch.full(
+            logits = torch.empty(
                 (batch_size * next_n, max_seq_len),
-                float("-inf"),
                 device=q_fp8.device,
                 dtype=torch.float32,
             )
