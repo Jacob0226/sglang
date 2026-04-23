@@ -433,7 +433,7 @@ class Indexer(MultiPlatformOp):
                 page_size % 16 == 0
             ), f"HIP preshuffle requires page_size to be a multiple of 16, got {page_size}"
         else:
-            assert page_size == 64, "deep_gemm only supports page_size 64"
+            assert page_size == 64, "only support page size 64"
         block_tables = metadata.get_page_table_64()
 
         max_seq_len = block_tables.shape[1] * page_size
@@ -558,7 +558,7 @@ class Indexer(MultiPlatformOp):
                 page_size % 16 == 0
             ), f"HIP preshuffle requires page_size to be a multiple of 16, got {page_size}"
         else:
-            assert page_size == 64, "deep_gemm only supports page_size 64"
+            assert page_size == 64, "only support page size 64"
 
         assert len(weights.shape) == 3
         assert (

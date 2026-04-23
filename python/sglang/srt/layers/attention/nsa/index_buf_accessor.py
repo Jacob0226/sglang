@@ -421,7 +421,7 @@ def _set_k_and_s_triton(
             page_size % 16 == 0
         ), f"HIP preshuffle requires page_size to be a multiple of 16, got {page_size}"
     else:
-        assert page_size == 64, "deep_gemm only supports page_size 64"
+        assert page_size == 64
 
     assert buf.dtype == torch.uint8
     assert loc.dtype == torch.int64, f"{loc.dtype=}"  # can be int32
