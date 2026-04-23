@@ -428,7 +428,12 @@ class Indexer(MultiPlatformOp):
             assert isinstance(forward_batch.token_to_kv_pool, NSATokenToKVPool)
 
         page_size = forward_batch.token_to_kv_pool.page_size
-        assert page_size == 64, "only support page size 64"
+        if _is_hip:
+            assert (
+                page_size % 16 == 0
+            ), f"HIP preshuffle requires page_size to be a multiple of 16, got {page_size}"
+        else:
+            assert page_size == 64, "deep_gemm only supports page_size 64"
         block_tables = metadata.get_page_table_64()
 
         max_seq_len = block_tables.shape[1] * page_size
@@ -548,7 +553,12 @@ class Indexer(MultiPlatformOp):
         assert forward_batch.forward_mode.is_extend_without_speculative()
 
         page_size = forward_batch.token_to_kv_pool.page_size
-        assert page_size == 64, "only support page size 64"
+        if _is_hip:
+            assert (
+                page_size % 16 == 0
+            ), f"HIP preshuffle requires page_size to be a multiple of 16, got {page_size}"
+        else:
+            assert page_size == 64, "deep_gemm only supports page_size 64"
 
         assert len(weights.shape) == 3
         assert (
