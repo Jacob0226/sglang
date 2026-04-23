@@ -1891,10 +1891,7 @@ class NSATokenToKVPool(MLATokenToKVPool):
         # num head == 1 and head dim == 128 for index_k in NSA
         assert index_head_dim == 128
 
-        if _is_hip:
-            assert self.page_size == 16
-        else:
-            assert self.page_size == 64
+        assert self.page_size == 64
         with (
             torch.cuda.use_mem_pool(self.custom_mem_pool)
             if self.custom_mem_pool
