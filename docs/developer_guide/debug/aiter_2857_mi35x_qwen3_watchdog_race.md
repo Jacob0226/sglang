@@ -104,35 +104,111 @@ The left column grows significantly in v0.1.12.post1; the right column is unchan
 
 ## Recommended fix path
 
-### Preferred — bump PyTorch to include #176251
+Root cause recap: the HIP runtime is the buggy layer. Fix the runtime and every consumer works; avoid the runtime and you only move the symptoms around.
 
-[`pytorch/pytorch#176251` "[ROCm] Avoid watchdog event queries during graph capture"](https://github.com/pytorch/pytorch/pull/176251) was merged on 2026-03-17 as commit `686aba0196bd2458beaf9abc097fbb4d1c90f4fe`. It adds:
+Per upstream statement on [pytorch/pytorch#179780](https://github.com/pytorch/pytorch/pull/179780):
 
-- `RocmWatchdogEventQueryContextGuard` (thread-local guard set only on the watchdog thread)
-- `queryEventWithRocmWatchdogCaptureWorkaround()` — skips `hipEventQuery` entirely when any capture is active; otherwise maps `hipErrorCapturedEvent` / `hipErrorStreamCaptureUnsupported` from the watchdog to "not ready" instead of fatal.
+> "The runtime fix was introduced in **rocm 7.2.1**, but to ensure backwards compatibility, we are adding a version guard so that the workaround only takes effect in ROCm versions without the runtime fix."
 
-Any PyTorch build after 2026-03-17 that is ROCm-compatible with 7.2 will include this workaround. (The follow-up PRs [#178943 / #179780](https://github.com/pytorch/pytorch/pull/178943) are version guards to remove the workaround once HIP runtime ships the proper fix.)
+That is, ROCm 7.2.1+ already has the fix in the runtime — no PyTorch workaround needed at all. ROCm ≤ 7.2.0 needs PR #176251 in PyTorch.
 
-The image we use in CI is pinned to a specific ROCm-patched torch wheel:
+Versions currently in play:
 
+| Image                                                                 | ROCm     | PyTorch                            | Status                                                                                          |
+| --------------------------------------------------------------------- | -------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `rocm/sgl-dev:v0.5.10rc0-rocm720-mi35x-20260412` (dev container)      | **7.2.0** | `2.9.1+rocm7.2.0.lw.git7e1940d4` (`7e1940d4` is 2025-12-09) | **Hits the bug** — ROCm < 7.2.1 and torch predates PR #175377 / #176251 by ~3 months.            |
+| `rocm/sgl-dev:v0.5.10rc0-rocm700-mi35x-20260421` (nightly CI image)   | ~7.0.x   | similar-aged torch                 | Hits the bug.                                                                                   |
+| `rocm/pytorch:rocm7.2.2_ubuntu22.04_py3.10_pytorch_release_2.9.1`     | **7.2.2** | `2.9.1+rocm7.2.2.git36be91cf`      | **Drop-in safe** — same Ubuntu 22.04 / py3.10 / torch 2.9.1 ABI, but ROCm 7.2.2 runtime is fixed. |
+| `rocm/pytorch:rocm7.2.1_ubuntu22.04_py3.10_pytorch_release_2.9.1`     | 7.2.1    | 2.9.1                              | Also safe; 7.2.1 is the first version with the runtime fix.                                     |
+| `rocm/pytorch:rocm7.2.2_ubuntu24.04_py3.12_pytorch_release_2.10.0`    | 7.2.2    | 2.10.0 (`40d237bf`, 2026-04-03)    | ROCm is fixed, but Py 3.12 / Ubuntu 24.04 would force a full C++-extension rebuild.              |
+
+### Preferred — bump the ROCm base image from 7.2 → 7.2.2 (or 7.2.1)
+
+One line in `docker/rocm.Dockerfile`:
+
+```diff
+-ARG BASE_IMAGE_950_ROCM720="rocm/pytorch:rocm7.2_ubuntu22.04_py3.10_pytorch_release_2.9.1"
++ARG BASE_IMAGE_950_ROCM720="rocm/pytorch:rocm7.2.2_ubuntu22.04_py3.10_pytorch_release_2.9.1"
 ```
-TORCH_ROCM_FILE="torch-2.9.1+rocm7.2.0.lw.git7e1940d4-cp310-cp310-linux_x86_64.whl"
+(same idea for `BASE_IMAGE_942_ROCM720`).
+
+Why this is the cleanest path:
+
+- Ubuntu 22.04, Python 3.10, **PyTorch 2.9.1** — all identical to the current stack. C++ ABI unchanged.
+- **Zero rebuild** of `aiter`, `sgl-kernel`, `fast_hadamard_transform`, `triton`, `tilelang`, `mori`. HIP is backward compatible across 7.2.x patch releases, so kernels built for 7.2.0 run on 7.2.2.
+- Fixes the **actual** HIP runtime bug; does not rely on a PyTorch-side workaround. Once everything runs on ≥ 7.2.1, PyTorch's `RocmWatchdogEventQueryContextGuard` becomes a no-op anyway ([PR #179780](https://github.com/pytorch/pytorch/pull/179780)).
+- The CI `Hot patch: torch-ROCm` block in `rocm.Dockerfile` (the `TORCH_ROCM_FILE="torch-2.9.1+rocm7.2.0.lw.git7e1940d4..."` override) can be left as-is; at container boot it runs `python3 -c "import torch"` against whatever is installed, and `rocm/pytorch:rocm7.2.2_..._2.9.1` already ships 2.9.1. If a rebuild of that hot-patch block is still desired, it can be removed entirely for rocm720 since the upstream rocm/pytorch image already provides the right triton metadata.
+
+The rocm700 path (`BASE_IMAGE_950 = rocm/sgl-dev:rocm7-vllm-20250904`) does not have a rocm/pytorch counterpart with the fix; a separate base-image refresh is needed, or the matching rocm720 job used instead.
+
+### Fallback 1 — keep ROCm 7.2.0, upgrade PyTorch to a nightly that includes #176251
+
+Works if for any reason the base image cannot be moved. Use a PyTorch nightly published after 2026-03-17 (and before PR #178943 / #179780 land in a way that guards the workaround off for ROCm 7.2.0):
+
+```bash
+# inside the container
+pip uninstall -y torch torchvision torchaudio
+pip install --pre torch==2.12.0.dev20260415+rocm7.2 torchvision torchaudio \
+  --index-url https://download.pytorch.org/whl/nightly/rocm7.2
 ```
 
-This is a 2.9.1-based build that predates 2026-03-17 and does **not** contain the workaround. Fixing this properly requires rebasing that wheel on a newer PyTorch commit, or switching to a nightly ROCm 7.2 wheel.
+Then rebuild all C++ extensions that link against torch:
 
-### Short term — revert `AITER_COMMIT_DEFAULT` to `v0.1.11.post1`
+```bash
+# aiter (editable, already in /sgl-workspace/aiter)
+cd /sgl-workspace/aiter && pip uninstall -y amd-aiter
+GPU_ARCHS=gfx950 PREBUILD_KERNELS=1 python3 setup.py develop
 
-Effectively a revert of sglang commit `213027951` in `docker/rocm.Dockerfile`. This eliminates the widened race window. Trade-off: we lose any v0.1.12 functional improvements until the torch bump lands.
+# sgl-kernel
+cd /sgl-workspace/sglang/sgl-kernel
+pip uninstall -y sglang-kernel
+rm -f pyproject.toml && cp pyproject_rocm.toml pyproject.toml
+AMDGPU_TARGET=gfx950 python3 setup_rocm.py install
 
-### Optional — shrink the race window from aiter side
+# fast-hadamard-transform
+cd /sgl-workspace/fast-hadamard-transform && python3 setup.py install
 
-Lower-risk patches that can be suggested upstream (aiter):
+# triton (custom build): usually survives minor torch bumps, re-run if import fails
+cd /sgl-workspace/triton-custom && pip install -e .
 
-- Deduplicate `graph_unreg_input_buffers_` / `graph_unreg_output_buffers_` by base allocation pointer before calling `hipIpcGetMemHandle` — same allocator slab often reuses the same base, so the unique handle count can collapse from thousands to tens.
-- Replace the `TCPStore.set` + `world_size × get` loop with a single gloo `broadcast_object_list` (old behaviour) so the per-rank exchange is O(1) small messages instead of O(world_size) blocking RTTs.
+# sglang itself: pure Python, editable — no rebuild needed
+```
 
-Neither fixes the HIP runtime bug — they only reduce how wide the capture window is.
+Caveats:
+
+- Torch nightly `2.12.x` / `2.13.x` has had API drift from 2.9; aiter / sgl-kernel source may hit deprecation or signature changes. If build fails, the diff is usually small and patchable, but it is not zero.
+- torchvision / torchaudio must match the new torch; nightly index has them.
+- `RocmWatchdogEventQueryContextGuard` is still in main as of writing (PR #178943 draft, PR #179780 open-approved but not merged); confirm with `strings -a $(python3 -c "import torch,os; print(os.path.dirname(torch.__file__))")/lib/libtorch_hip.so | grep RocmWatchdog` after install.
+
+### Fallback 2 — cherry-pick PR #176251 into a local torch 2.9.1 rebuild
+
+Only three files change ([`ProcessGroupNCCL.cpp`, `CUDAGraph.cpp`, `CUDAGraph.h`](https://github.com/pytorch/pytorch/pull/176251)). Build yields a drop-in torch 2.9.1 wheel with the workaround, zero ABI drift, zero C++-extension rebuild. Costs 1-2 hours of torch source build. Only worth it if Fallback 1's nightly breaks something and the base image cannot be swapped.
+
+### Optional — shrink the race window from aiter side (lower priority)
+
+These would not fix the underlying runtime bug but would reduce exposure:
+
+- Deduplicate `graph_unreg_input_buffers_` / `graph_unreg_output_buffers_` by base allocation pointer before calling `hipIpcGetMemHandle`. Same allocator slab often reuses the same base, so unique handle count collapses from thousands to tens.
+- Replace the `TCPStore.set` + `world_size × get` loop in `IPCBufferPool._gather_ipc_meta` with a single gloo `broadcast_object_list` (the v0.1.11.post1 behaviour). O(1) small messages vs O(world_size) blocking RTTs.
+
+## Order-of-operations cheat sheet
+
+When doing a torch-level upgrade (Fallback 1), the only thing that depends on torch's C++ ABI is the set of C++ extensions. Python-only packages (sglang itself, sglang-router, py tools) do not need any rebuild.
+
+1. Backup: `pip freeze > /tmp/env.pre.txt`, snapshot `/opt/venv/lib/python3.10/site-packages/torch/lib/` if space allows.
+2. Uninstall `torch`, `torchvision`, `torchaudio` together.
+3. Install new `torch` + matching `torchvision` + `torchaudio` from the same index.
+4. Rebuild C++ extensions — order among them does not matter:
+   - `amd-aiter` (editable → `python setup.py develop`)
+   - `sglang-kernel` (wheel → rebuild from `/sgl-workspace/sglang/sgl-kernel`)
+   - `fast_hadamard_transform`
+   - `triton-custom` (usually survives, but `pip install -e .` if import fails)
+   - `mori`, `tilelang` if present (editable → rerun their build)
+5. `sglang` is pure Python editable install — re-import to pick up the new torch, no rebuild.
+6. Verify: `strings -a …/libtorch_hip.so | grep RocmWatchdog` should return hits (PR #176251 symbols present).
+7. Smoke test: launch Qwen3-235B-MXFP4 with `--tp 4 --ep 2` and confirm graph capture completes past the previous crash point.
+
+For the base-image upgrade (Preferred), none of steps 4-7 are required — the existing sgl-dev build already works against torch 2.9.1 and that exact ABI is preserved.
 
 ## References
 
