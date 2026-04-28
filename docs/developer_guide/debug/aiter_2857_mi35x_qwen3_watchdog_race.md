@@ -527,7 +527,120 @@ from the new chain (`merge-base v0.1.10.post3 v0.1.12.post1` = empty).
 Net effect: bisecting requires either talking to aiter maintainers about the
 pre-rewrite commit graph, or doing file-level delta-debugging on the 1029-file diff
 (82740 insertions / 29491 deletions) between the two trees rather than commit-level
-bisect.
+bisect. The latter was done — see "Module-level delta-debugging" below.
+
+### Module-level delta-debugging on `fused_moe.py` (2026-04-28)
+
+Since commit-level `git bisect` is impossible (above), did file-level swap
+A/B testing instead. All experiments start from
+`jacchang/shared:sglang-aiter2857-rocm722-mi35x-20260424` (v0.1.12.post1
+baseline, GSM8K ≈ 0.918 ± sampling noise), then overlay v0.1.11.post1's
+version of one or more files at `/sgl-workspace/aiter/aiter/...` and re-run
+the GSM8K eval. Helper script `/tmp/repro_2857/exp.sh` automates fresh
+container spawn + Triton cache flush + test launch.
+
+| Exp | What was changed (v0.1.11 → v0.1.12 image) | GSM8K | bs=1 speed | Verdict |
+| --- | --- | ---: | ---: | --- |
+| baseline | (none, pure v0.1.12.post1) | 0.918 | 100.6 | FAIL — re-confirms doc Results above |
+| **A** | `aiter/utility/fp4_utils.py` only (Triton FP4 quant kernel; the diff includes a rewrite of `_round_fp32_to_fp4` rounding semantics from round-half-up to round-to-nearest-even) | 0.912 | 93.4 | NO IMPROVEMENT — `fp4_utils.py` is **not** the regression source. The rounding-rewrite hypothesis was wrong. |
+| **B** | `aiter/fused_moe.py` only (the dispatcher; 280-line diff) | **0.952** | 99.2 | **PASS, recovered** — regression rides with `fused_moe.py` changes |
+| **C** | `aiter/fused_moe.py` line 20 import only: redirect `mxfp4_moe_sort_fwd` and `fused_dynamic_mxfp4_quant_moe_sort` to their Triton-path equivalents (with M-dim padding to multiple of 32 to match HIP's `out_scale` shape contract) | — | — | **CRASH** — `ck_moe_stage1` HIP kernel SIGABRTs on the first forward (Memory access fault by GPU on `0x14208000` etc.) |
+| **D** | `aiter/fused_moe.py` `get_padded_M` body only (revert v0.1.11's down-cap policy: M<2048→1024, M<16384→2048, else→16384 vs v0.1.12's nextPow2/32768-cap) | 0.908–0.913 | 100.2 | NO IMPROVEMENT — `get_padded_M` policy is **not** the regression source |
+
+#### What this localizes
+
+**Confirmed by Exp B + Exp D**:
+- The regression rides with changes inside `fused_moe.py` (Exp B recovered).
+- It is **not** the Triton MXFP4 quant kernel in `fp4_utils.py` (Exp A).
+- It is **not** the `get_padded_M` policy change (Exp D).
+
+**Strongly suggested by Exp C's crash, but not proven by single-variable
+isolation**:
+v0.1.12 added `mxfp4_moe_sort_hip` and `fused_dynamic_mxfp4_quant_moe_sort_hip`
+public wrappers in `aiter/ops/quant.py` (decorated `@compile_ops("module_quant")`,
+bound to HIP/CK kernels in `module_quant.so`), and rewired `fused_moe.py`
+line 20 + 4 call sites to call them. Replacing only those Python wrappers
+with Triton-path equivalents (while keeping v0.1.12's `ck_moe_stage1` /
+`ck_moe_stage2` HIP MoE GEMM kernels downstream) makes the HIP GEMM SIGABRT
+on the first forward — even after padding the Triton sort output's M dim
+to match HIP's `(M_o + 31) // 32 * 32` allocator size.
+
+This means v0.1.12's MoE 2-stage HIP pipeline appears to be **co-designed**:
+the sort kernel output and the GEMM kernel input share assumptions about
+layout / strides / dtype / scale-tile alignment beyond what the public
+Python signatures expose. Exp B succeeds because v0.1.11's `fused_moe.py`
+calls v0.1.11's Triton sort + Triton/CK GEMM pair — the Python side
+sidesteps the entire v0.1.12 HIP MoE 2-stage path.
+
+So the real answer to "which change in `fused_moe.py` causes the
+regression?" is: it's **not** any single Python edit visible in the 280-line
+diff in isolation. The full Python rewire (line 20 import + 4 call sites)
+is needed to dispatch to the new HIP `mxfp4_moe_sort_hip` /
+`fused_dynamic_mxfp4_quant_moe_sort_hip` kernels, and the *numerical
+regression* is in those C++/HIP kernels (compiled into `module_quant.so` /
+`module_moe_*.so` from `csrc/`).
+
+Bisecting any further requires diffing v0.1.11 vs v0.1.12 `csrc/` and
+rebuilding `module_quant.so` (and the matching `module_moe_*.so`) with one
+csrc-level change reverted at a time. Each iteration is a ~30–60 min CK +
+GEMM template build, and is best done by an aiter maintainer with full
+csrc context.
+
+### Trying aiter v0.1.13.dev0 — does **not** drop in cleanly (2026-04-28)
+
+[ROCm/aiter](https://github.com/ROCm/aiter) tagged `v0.1.13.dev0` (==
+`v0.1.13-rc1`, commit `930c94120 revert gptoss tuned config #2904`) on top
+of the v0.1.12 line. Tested whether it might already have fixed the GSM8K
+regression upstream:
+
+```bash
+# inside the v0.1.12.post1 container (jacchang/shared:...20260424)
+cd /sgl-workspace/aiter
+git fetch --tags origin
+git checkout v0.1.13.dev0                  # -> 930c94120
+git submodule update --init --recursive    # CK bumped to fdf4bb7fcc98
+pip uninstall -y amd-aiter
+GPU_ARCHS=gfx950 PREBUILD_KERNELS=1 python3 setup.py develop
+```
+
+Build succeeded (`pip show amd-aiter` → `Version: 0.1.13rc1`). Server
+launched, model loaded, CUDA graph capture completed cleanly
+(`The server is fired up and ready to roll!`). But the **first GSM8K
+inference request** trips a HIP memory fault on multiple ranks:
+
+```
+Memory access fault by GPU node-3 ... on address 0x90208000. Reason: Unknown.
+Memory access fault by GPU node-2 ... on address 0x38208000. Reason: Unknown.
+Memory access fault by GPU node-4 ... on address 0x14208000. Reason: Unknown.
+GPU coredump: handler exited with error (status: 1)
+Fatal Python error: Aborted
+```
+
+The three faulting addresses share the same low-order pattern
+(`0x...208000`), suggesting a stride / pointer-arithmetic bug rather than
+random memory corruption.
+
+Three plausible causes, none individually verified:
+
+1. Real regression in v0.1.13.dev0 csrc/ kernels (the cleanest interpretation).
+2. `setup.py develop` doesn't fully overwrite the v0.1.12 pre-built
+   `/sgl-workspace/aiter/aiter/jit/*.so` files in the image; mixing
+   v0.1.12 cached ABI with v0.1.13 newly-compiled symbols.
+3. Submodule `composable_kernel` was bumped to `fdf4bb7fcc98` but
+   `sgl-kernel` and other torch C++ extensions in the image still expect
+   the older CK ABI.
+
+Bottom line: **v0.1.13.dev0 is not a drop-in fix** for the v0.1.12.post1
+GSM8K regression on this CI configuration. Worth retesting once
+v0.1.13.post0 / v0.1.13 final ships, or when AMD provides a pre-built
+`rocm/sgl-dev:*` image rebased on v0.1.13.
+
+`v0.1.12.post2` (cherry-picks
+[#2645 multi-arch CK GEMM dispatch](https://github.com/ROCm/aiter/pull/2645)
++ a SynchronizedCache backport on top of v0.1.12.post1; on the
+`release/v0.1.12` branch and so shares git history with v0.1.12.post1)
+is a much safer drop-in candidate to test next — its scope is narrower and
+the ABI risk is much lower than v0.1.13.dev0. Untested as of 2026-04-28.
 
 ### Snapshot images for further A/B work
 
