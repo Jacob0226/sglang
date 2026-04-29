@@ -644,7 +644,10 @@ class DeepseekV2MoE(nn.Module):
                 expert_location_dispatch_info=dispatch_info,
             )
             final_hidden_states = self.experts(hidden_states, topk_output)
-            if not (_is_cuda or _is_musa) or isinstance(
+            # Skip the explicit multiply when the expert path already fused it:
+            #   * CUDA / MUSA: fused inside the experts kernel
+            #   * ROCm + aiter: fused inside biased_grouped_topk
+            if (not (_is_cuda or _is_musa) and not _use_aiter) or isinstance(
                 self.experts.quant_method, KTEPWrapperMethod
             ):
                 final_hidden_states *= self.routed_scaling_factor
@@ -1917,9 +1920,19 @@ class DeepseekV2Model(nn.Module):
         else:
             self.embed_tokens = PPMissingLayer()
 
+        # On HIP, alt_stream is gated behind SGLANG_ENABLE_HIP_DUAL_STREAM (default
+        # OFF). The A_v4 NSA-decode dual-stream layout in forward_absorb_prepare
+        # currently regresses on MI355X due to HBM contention + HIP-graph
+        # AllReduce slowdown; the layout is preserved in forward_mla.py so it can
+        # be re-enabled without code changes once ROCm fixes the AR fence cost.
         self.alt_stream = (
             torch.cuda.Stream()
-            if _is_cuda or _is_musa or envs.SGLANG_NPU_USE_MULTI_STREAM.get()
+            if (
+                _is_cuda
+                or _is_musa
+                or (_is_hip and envs.SGLANG_ENABLE_HIP_DUAL_STREAM.get())
+                or envs.SGLANG_NPU_USE_MULTI_STREAM.get()
+            )
             else None
         )
 

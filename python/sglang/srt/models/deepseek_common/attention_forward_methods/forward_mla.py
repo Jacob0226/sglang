@@ -101,6 +101,9 @@ class DeepseekMLAForwardMixin:
 
         q_lora = None
         topk_indices = None
+        # Set inside the q_lora_rank-not-None HIP branch below; default False.
+        # Drives the HIP-only gap-fill optimizations (fused_qk_kv_cache + bottom join).
+        overlap_indexer_with_gap_fill = False
         if self.q_lora_rank is not None:
             q, latent_cache = (
                 get_attn_tp_context()
@@ -182,35 +185,59 @@ class DeepseekMLAForwardMixin:
                 if q_lora is None:
                     q_lora = q
 
-            # overlap q_b_proj and indexer during decode
-            if (
-                self.alt_stream is not None
-                and get_is_capture_mode()
-                and forward_batch.forward_mode.is_decode_or_idle()
-                and q_lora is not None
-            ):
-                current_stream = torch.cuda.current_stream()
-                self.alt_stream.wait_stream(current_stream)
-                with torch.cuda.stream(self.alt_stream):
-                    k_nope = k_nope.unsqueeze(1)
-                    q = self.q_b_proj(q)[0].view(
-                        -1, self.num_local_heads, self.qk_head_dim
-                    )
-                if not self.skip_topk or prev_topk_indices is None:
-                    topk_indices = self.indexer(
-                        x=hidden_states,
-                        q_lora=q_lora,
-                        positions=positions,
-                        forward_batch=forward_batch,
-                        layer_id=self.layer_id,
-                    )
-                else:
-                    topk_indices = prev_topk_indices
-                current_stream.wait_stream(self.alt_stream)
-            else:
+            # On HIP (ROCm), use the A_v4 dual-stream layout: overlap NSA indexer
+            # with [q_b_proj + bmm w_kc + rotary_emb (+ fused_qk_rope_cat for the
+            # gfx95 NSA tilelang path)]. The indexer runs on alt; q_b_proj plus
+            # the downstream "gap-fill" (bmm w_kc absorb + rotary on q_pe/k_pe)
+            # runs on cur and finishes around the same time as the indexer.
+            #
+            # Two HIP-graph capture rules shape this layout:
+            #   1. Dispatch order picks the physical stream — the branch
+            #      dispatched first at the fork keeps the predecessor stream
+            #      (phys 0); the later-dispatched branch lands on a fresh aux
+            #      stream (phys 4). We therefore dispatch q_b_proj on cur FIRST,
+            #      and only afterwards enter `with stream(alt):` for the indexer.
+            #   2. `alt.wait_stream(cur)` snapshots cur's state at call time.
+            #      Since the indexer needs only q_lora (phase1 output), placing
+            #      the wait_stream BEFORE q_b_proj lets alt's indexer chain
+            #      start the instant phase1 completes, in parallel with cur's
+            #      q_b_proj and gap-fill — instead of waiting for q_b_proj.
+            #
+            # The join (`cur.wait_stream(alt)`) is moved below, after rotary_emb,
+            # so cur's bmm w_kc + rotary_emb also overlap with alt's indexer.
+            #
+            # On non-HIP backends (CUDA / MUSA / NPU) we keep the original
+            # `q_b_proj ∥ NSA indexer` overlap from the PR #23562 base — these
+            # have not been validated under the new layout.
+            if _is_hip:
+                overlap_indexer_with_gap_fill = (
+                    self.alt_stream is not None
+                    and get_is_capture_mode()
+                    and forward_batch.forward_mode.is_decode_or_idle()
+                    and q_lora is not None
+                )
+                if overlap_indexer_with_gap_fill:
+                    current_stream = torch.cuda.current_stream()
+                    self.alt_stream.wait_stream(current_stream)
+
                 k_nope = k_nope.unsqueeze(1)
-                q = self.q_b_proj(q)[0].view(-1, self.num_local_heads, self.qk_head_dim)
-                if q_lora is not None:
+                q = self.q_b_proj(q)[0].view(
+                    -1, self.num_local_heads, self.qk_head_dim
+                )
+
+                if overlap_indexer_with_gap_fill:
+                    if not self.skip_topk or prev_topk_indices is None:
+                        with torch.cuda.stream(self.alt_stream):
+                            topk_indices = self.indexer(
+                                x=hidden_states,
+                                q_lora=q_lora,
+                                positions=positions,
+                                forward_batch=forward_batch,
+                                layer_id=self.layer_id,
+                            )
+                    else:
+                        topk_indices = prev_topk_indices
+                elif q_lora is not None:
                     if not self.skip_topk or prev_topk_indices is None:
                         topk_indices = self.indexer(
                             x=hidden_states,
@@ -221,6 +248,50 @@ class DeepseekMLAForwardMixin:
                         )
                     else:
                         topk_indices = prev_topk_indices
+            else:
+                # CUDA / MUSA / NPU: original q_b_proj ∥ indexer layout from
+                # PR #23562 base, kept byte-identical to avoid perturbing
+                # untested platforms.
+                if (
+                    self.alt_stream is not None
+                    and get_is_capture_mode()
+                    and forward_batch.forward_mode.is_decode_or_idle()
+                    and q_lora is not None
+                ):
+                    current_stream = torch.cuda.current_stream()
+                    self.alt_stream.wait_stream(current_stream)
+                    with torch.cuda.stream(self.alt_stream):
+                        k_nope = k_nope.unsqueeze(1)
+                        q = self.q_b_proj(q)[0].view(
+                            -1, self.num_local_heads, self.qk_head_dim
+                        )
+                    if not self.skip_topk or prev_topk_indices is None:
+                        topk_indices = self.indexer(
+                            x=hidden_states,
+                            q_lora=q_lora,
+                            positions=positions,
+                            forward_batch=forward_batch,
+                            layer_id=self.layer_id,
+                        )
+                    else:
+                        topk_indices = prev_topk_indices
+                    current_stream.wait_stream(self.alt_stream)
+                else:
+                    k_nope = k_nope.unsqueeze(1)
+                    q = self.q_b_proj(q)[0].view(
+                        -1, self.num_local_heads, self.qk_head_dim
+                    )
+                    if q_lora is not None:
+                        if not self.skip_topk or prev_topk_indices is None:
+                            topk_indices = self.indexer(
+                                x=hidden_states,
+                                q_lora=q_lora,
+                                positions=positions,
+                                forward_batch=forward_batch,
+                                layer_id=self.layer_id,
+                            )
+                        else:
+                            topk_indices = prev_topk_indices
         else:
             q = self.q_proj(hidden_states)[0].view(
                 -1, self.num_local_heads, self.qk_head_dim
@@ -321,6 +392,46 @@ class DeepseekMLAForwardMixin:
         ):
             q_pe, k_pe = self.rotary_emb(positions, q_pe, k_pe)
 
+        # When the NSA TileLang fused-rope path is active, the
+        # fused_qk_rope_cat_and_cache_mla kernel that normally runs in
+        # forward_absorb_core is pulled here so it overlaps with the alt-stream
+        # indexer (instead of running serially after the join). Result of the
+        # fused kernel is forwarded to forward_absorb_core via fused_qk_kv_cache.
+        fused_qk_kv_cache = None
+        if (
+            overlap_indexer_with_gap_fill
+            and self.current_attention_backend in FORWARD_ABSORB_CORE_ATTENTION_BACKENDS
+            and skip_rope_for_nsa_tilelang_fused
+            and self.rotary_emb is not None
+        ):
+            cos = self.rotary_emb.cos_cache
+            sin = self.rotary_emb.sin_cache
+            kv_cache_dtype = (
+                fp8_dtype if self.kv_cache_dtype == "fp8_e4m3" else q_nope_out.dtype
+            )
+            q_cat, _, k_pe_fused, _ = fused_qk_rope_cat_and_cache_mla(
+                q_nope_out,
+                q_pe,
+                k_nope,
+                k_pe,
+                forward_batch.token_to_kv_pool.get_key_buffer(self.attn_mqa.layer_id),
+                forward_batch.out_cache_loc,
+                positions,
+                cos,
+                sin,
+                self.attn_mqa.k_scale,
+                self.rotary_emb.is_neox_style,
+                q_out_dtype=kv_cache_dtype,
+            )
+            fused_qk_kv_cache = (q_cat, k_pe_fused)
+
+        # Join the indexer alt-stream forked above. Only relevant on HIP — the
+        # CUDA / MUSA / NPU paths do their own join inline above, so
+        # `overlap_indexer_with_gap_fill` is False there and this block is a
+        # no-op.
+        if overlap_indexer_with_gap_fill:
+            torch.cuda.current_stream().wait_stream(self.alt_stream)
+
         if nsa_use_prefill_cp(forward_batch):
             # support allgather+rerrange
             k_nope, k_pe = self.rebuild_cp_kv_cache(
@@ -337,6 +448,7 @@ class DeepseekMLAForwardMixin:
             positions,
             topk_indices,
             llama_4_scaling,
+            fused_qk_kv_cache,
         )
 
     def forward_absorb_core(
@@ -350,51 +462,90 @@ class DeepseekMLAForwardMixin:
         positions,
         topk_indices,
         llama_4_scaling,
+        fused_qk_kv_cache=None,
     ):
         save_kv_cache = True
 
         if self.current_attention_backend in FORWARD_ABSORB_CORE_ATTENTION_BACKENDS:
             if self._skip_rope_for_nsa_tilelang_fused() and self.rotary_emb is not None:
-                cos = self.rotary_emb.cos_cache
-                sin = self.rotary_emb.sin_cache
-                kv_cache_dtype = (
-                    fp8_dtype if self.kv_cache_dtype == "fp8_e4m3" else q_nope_out.dtype
-                )
-                q_cat, _, k_pe_fused, _ = fused_qk_rope_cat_and_cache_mla(
-                    q_nope_out,
-                    q_pe,
-                    k_nope,
-                    k_pe,
-                    forward_batch.token_to_kv_pool.get_key_buffer(
-                        self.attn_mqa.layer_id
-                    ),
-                    forward_batch.out_cache_loc,
-                    positions,
-                    cos,
-                    sin,
-                    self.attn_mqa.k_scale,
-                    self.rotary_emb.is_neox_style,
-                    q_out_dtype=kv_cache_dtype,
-                )
-                q_nope_fused = q_cat[..., : self.kv_lora_rank]
-                q_pe_fused = q_cat[..., self.kv_lora_rank :]
+                # forward_absorb_prepare may have already done the fused kernel
+                # inside its dual-stream window so it overlaps with the indexer.
+                # Otherwise compute it here on the current stream.
+                if fused_qk_kv_cache is not None:
+                    q_cat, k_pe_fused = fused_qk_kv_cache
+                else:
+                    cos = self.rotary_emb.cos_cache
+                    sin = self.rotary_emb.sin_cache
+                    kv_cache_dtype = (
+                        fp8_dtype if self.kv_cache_dtype == "fp8_e4m3" else q_nope_out.dtype
+                    )
+                    q_cat, _, k_pe_fused, _ = fused_qk_rope_cat_and_cache_mla(
+                        q_nope_out,
+                        q_pe,
+                        k_nope,
+                        k_pe,
+                        forward_batch.token_to_kv_pool.get_key_buffer(
+                            self.attn_mqa.layer_id
+                        ),
+                        forward_batch.out_cache_loc,
+                        positions,
+                        cos,
+                        sin,
+                        self.attn_mqa.k_scale,
+                        self.rotary_emb.is_neox_style,
+                        q_out_dtype=kv_cache_dtype,
+                    )
                 save_kv_cache = False
-                if llama_4_scaling is not None:
-                    q_nope_fused *= llama_4_scaling
-                attn_output = self.attn_mqa(
-                    q_nope_fused,
-                    None,
-                    None,
-                    forward_batch,
-                    q_rope=q_pe_fused,
-                    k_rope=k_pe_fused,
-                    save_kv_cache=save_kv_cache,
-                    **(
-                        dict(topk_indices=topk_indices)
-                        if topk_indices is not None
-                        else {}
-                    ),
-                )
+                # In decode, pass q_cat directly (with q_rope=None) so the NSA
+                # backend's forward_decode uses its `q.contiguous().view(...)`
+                # zero-copy fast-path (nsa_backend.py L1546-1554) and skips an
+                # otherwise redundant `concat_mla_absorb_q_general(q_nope, q_rope)`
+                # call that would just re-materialize q_cat. This eliminates the
+                # `CatArrayBatchedCopy` kernel observed before main_kernel on
+                # ROCm tilelang decode traces.
+                #
+                # In prefill (extend), nsa_backend.forward_extend (L1361)
+                # currently asserts `q_rope is not None`, so we keep the split
+                # form for that path. The redundant cat there runs serially
+                # outside any HIP graph capture and is small relative to total
+                # prefill work.
+                if forward_batch.forward_mode.is_decode_or_idle():
+                    if llama_4_scaling is not None:
+                        # llama_4_scaling applies only to the q_nope portion.
+                        q_cat[..., : self.kv_lora_rank] *= llama_4_scaling
+                    attn_output = self.attn_mqa(
+                        q_cat,
+                        None,
+                        None,
+                        forward_batch,
+                        q_rope=None,
+                        k_rope=k_pe_fused,
+                        save_kv_cache=save_kv_cache,
+                        **(
+                            dict(topk_indices=topk_indices)
+                            if topk_indices is not None
+                            else {}
+                        ),
+                    )
+                else:
+                    q_nope_fused = q_cat[..., : self.kv_lora_rank]
+                    q_pe_fused = q_cat[..., self.kv_lora_rank :]
+                    if llama_4_scaling is not None:
+                        q_nope_fused *= llama_4_scaling
+                    attn_output = self.attn_mqa(
+                        q_nope_fused,
+                        None,
+                        None,
+                        forward_batch,
+                        q_rope=q_pe_fused,
+                        k_rope=k_pe_fused,
+                        save_kv_cache=save_kv_cache,
+                        **(
+                            dict(topk_indices=topk_indices)
+                            if topk_indices is not None
+                            else {}
+                        ),
+                    )
             else:
                 extra_args = {}
                 if self._fuse_rope_for_trtllm_mla(forward_batch):

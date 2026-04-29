@@ -345,6 +345,14 @@ class Envs:
     # MTHREADS & MUSA
     SGLANG_MUSA_FA3_FORCE_UPDATE_METADATA = EnvBool(False)
 
+    # AMD ROCm / HIP
+    # Enable the A_v4 NSA-decode dual-stream layout (overlap NSA indexer on alt
+    # with [q_b_proj + bmm w_kc + fused_qk_rope_cat] on cur). Currently OFF
+    # because on MI355X this regresses ~30 us / layer due to HBM contention and
+    # a HIP-graph-specific AllReduce slowdown. Kept opt-in for future ROCm
+    # releases that may fix the AR fence cost.
+    SGLANG_ENABLE_HIP_DUAL_STREAM = EnvBool(False)
+
     # Quantization
     SGLANG_INT4_WEIGHT = EnvBool(False)
     SGLANG_CPU_QUANTIZATION = EnvBool(False)
