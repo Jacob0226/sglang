@@ -1548,7 +1548,13 @@ class NativeSparseAttnBackend(
             q_rope = q_rope.view(
                 -1, layer.tp_q_head_num, layer.head_dim - layer.v_head_dim
             )
+            # Caller passed split q_nope / q_rope; we'll need to concat below if
+            # the chosen impl wants q_all.
+            q_all = None
         else:
+            # Caller passed already-concatenated q (q_all = q). Reuse it directly
+            # via a zero-copy view; the impl-specific blocks below will skip the
+            # otherwise redundant concat_mla_absorb_q_general call.
             q_all = q.contiguous().view(-1, layer.tp_q_head_num, layer.head_dim)
             q_nope = q_all[:, :, : layer.v_head_dim]
             q_rope = q_all[:, :, layer.v_head_dim :]
@@ -1573,8 +1579,12 @@ class NativeSparseAttnBackend(
                 page_size=1,
             )
 
+        # Cat-skip is HIP-only: when caller passes q_rope=None on HIP, q_all has
+        # already been set to a zero-copy view of q in the else branch above and
+        # we can reuse it directly. Non-HIP backends fall through to the original
+        # "always cat" behavior to keep CUDA / MUSA paths byte-identical.
         if self.nsa_decode_impl == "flashmla_sparse":
-            if q_rope is not None:
+            if q_all is None or not _is_hip:
                 q_all = concat_mla_absorb_q_general(q_nope, q_rope)
             return self._forward_flashmla_sparse(
                 q_all=q_all,
@@ -1584,7 +1594,7 @@ class NativeSparseAttnBackend(
                 v_head_dim=layer.v_head_dim,
             )
         elif self.nsa_decode_impl == "flashmla_kv":
-            if q_rope is not None:
+            if q_all is None or not _is_hip:
                 q_all = concat_mla_absorb_q_general(q_nope, q_rope)
             return self._forward_flashmla_kv(
                 q_all=q_all,
@@ -1597,7 +1607,7 @@ class NativeSparseAttnBackend(
                 page_table_1=page_table_1,
             )
         elif self.nsa_decode_impl == "tilelang":
-            if q_rope is not None:
+            if q_all is None or not _is_hip:
                 q_all = concat_mla_absorb_q_general(q_nope, q_rope)
             return self._forward_tilelang(
                 q_all=q_all,
@@ -1622,7 +1632,7 @@ class NativeSparseAttnBackend(
                 page_size=1,
             )
         elif self.nsa_decode_impl == "aiter":
-            if q_rope is not None:
+            if q_all is None or not _is_hip:
                 q_all = torch.cat([q_nope, q_rope], dim=-1)
             return self._forward_aiter(
                 q_all=q_all,
