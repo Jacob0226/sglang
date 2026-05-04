@@ -374,6 +374,13 @@ class Envs:
     SGLANG_USE_FUSED_METADATA_COPY = EnvBool(True)
     SGLANG_VERIFY_FUSED_METADATA_COPY = EnvBool(False)
     SGLANG_NSA_FORCE_MLA = EnvBool(False)
+    # Selects the TileLang sparse-MLA decode variant when
+    # `--nsa-decode-backend tilelang` is in effect.  Values:
+    #   "auto"   - conservative default (currently == bf16, no behavior change)
+    #   "bf16"   - original main_kernel (sparse_mla_fwd_decode_partial)
+    #   "fp8"    - TileLang FP8-KV variant (tilelang_kernel_fp8.py)
+    #   "flydsl" - hand-written FlyDSL single-pass FP8 fmha
+    SGLANG_NSA_TILELANG_VARIANT = EnvStr("auto")
 
     # sgl-kernel
     SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK = EnvBool(False)

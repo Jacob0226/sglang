@@ -277,13 +277,7 @@ class NSAIndexerMetadata(BaseIndexerMetadata):
 
 
 _NSA_IMPL_T: TypeAlias = Literal[
-    "flashmla_sparse",
-    "flashmla_kv",
-    "fa3",
-    "tilelang",
-    "tilelang_fp8",  # TileLang variant that consumes FP8 paged KV directly.
-    "flydsl",        # Hand-written FlyDSL single-pass FP8 fmha (gfx950 only).
-    "trtllm",
+    "flashmla_sparse", "flashmla_kv", "fa3", "tilelang", "trtllm"
 ]
 
 
@@ -1575,26 +1569,6 @@ class NativeSparseAttnBackend(
                 sm_scale=layer.scaling,
                 v_head_dim=layer.v_head_dim,
             )
-        elif self.nsa_decode_impl == "tilelang_fp8":
-            if q_rope is not None:
-                q_all = concat_mla_absorb_q_general(q_nope, q_rope)
-            return self._forward_tilelang_fp8(
-                q_all=q_all,
-                kv_cache=kv_cache,
-                page_table_1=page_table_1,
-                sm_scale=layer.scaling,
-                v_head_dim=layer.v_head_dim,
-            )
-        elif self.nsa_decode_impl == "flydsl":
-            if q_rope is not None:
-                q_all = concat_mla_absorb_q_general(q_nope, q_rope)
-            return self._forward_flydsl(
-                q_all=q_all,
-                kv_cache=kv_cache,
-                page_table_1=page_table_1,
-                sm_scale=layer.scaling,
-                v_head_dim=layer.v_head_dim,
-            )
         elif self.nsa_decode_impl == "fa3":
             return self._forward_fa3(
                 q_rope=q_rope,
@@ -1832,61 +1806,67 @@ class NativeSparseAttnBackend(
         page_table_1: torch.Tensor,
         sm_scale: float,
     ) -> torch.Tensor:
-        from sglang.srt.layers.attention.nsa.tilelang_kernel import tilelang_sparse_fwd
+        """Dispatch to a TileLang sparse-MLA decode variant.
 
-        return tilelang_sparse_fwd(
-            q=q_all,
-            kv=kv_cache,
-            indices=page_table_1.unsqueeze(1),
-            sm_scale=sm_scale,
-            d_v=v_head_dim,
-        )
+        Honors ``SGLANG_NSA_TILELANG_VARIANT``::
 
-    def _forward_tilelang_fp8(
-        self,
-        q_all: torch.Tensor,
-        kv_cache: torch.Tensor,
-        v_head_dim: int,
-        page_table_1: torch.Tensor,
-        sm_scale: float,
-    ) -> torch.Tensor:
-        """TileLang variant that consumes the FP8 paged KV layout directly.
+            "auto" (default)  -> bf16 (original main_kernel)
+            "bf16"            -> bf16 (original main_kernel)
+            "fp8"             -> TileLang FP8-KV variant (saves ~43% HBM)
+            "flydsl"          -> hand-written FlyDSL single-pass FP8 fmha
 
-        Saves ~43% of HBM traffic vs. the bf16 path by reading FP8 nope +
-        per-tile fp32 scales + bf16 rope and dequantizing in shared memory.
+        ``auto`` keeps today's behavior (BF16 main_kernel) so other models
+        that share this code path are unaffected; FP8 / FlyDSL variants
+        require explicit opt-in until they are validated.
         """
-        from sglang.srt.layers.attention.nsa.tilelang_kernel_fp8 import (
-            tilelang_sparse_fwd_fp8,
-        )
+        variant = envs.SGLANG_NSA_TILELANG_VARIANT.get().lower()
+        if variant == "auto":
+            # Conservative default: stay on the well-tested bf16 path.
+            # The auto-selector can later look at kv_cache_dtype + arch
+            # and promote to "fp8" once that variant is validated.
+            variant = "bf16"
 
-        return tilelang_sparse_fwd_fp8(
-            q=q_all,
-            kv_paged_uint8=kv_cache,
-            indices=page_table_1.unsqueeze(1),
-            sm_scale=sm_scale,
-            d_v=v_head_dim,
-        )
+        if variant == "bf16":
+            from sglang.srt.layers.attention.nsa.tilelang_kernel import (
+                tilelang_sparse_fwd,
+            )
 
-    def _forward_flydsl(
-        self,
-        q_all: torch.Tensor,
-        kv_cache: torch.Tensor,
-        v_head_dim: int,
-        page_table_1: torch.Tensor,
-        sm_scale: float,
-    ) -> torch.Tensor:
-        """Hand-written FlyDSL single-pass FP8 fmha (gfx950 only)."""
-        from sglang.srt.layers.attention.nsa.flydsl_kernel import (
-            flydsl_sparse_mla_decode_fp8,
-        )
+            return tilelang_sparse_fwd(
+                q=q_all,
+                kv=kv_cache,
+                indices=page_table_1.unsqueeze(1),
+                sm_scale=sm_scale,
+                d_v=v_head_dim,
+            )
+        elif variant == "fp8":
+            from sglang.srt.layers.attention.nsa.tilelang_kernel_fp8 import (
+                tilelang_sparse_fwd_fp8,
+            )
 
-        return flydsl_sparse_mla_decode_fp8(
-            q=q_all,
-            kv_paged_uint8=kv_cache,
-            indices=page_table_1.unsqueeze(1),
-            sm_scale=sm_scale,
-            d_v=v_head_dim,
-        )
+            return tilelang_sparse_fwd_fp8(
+                q=q_all,
+                kv_paged_uint8=kv_cache,
+                indices=page_table_1.unsqueeze(1),
+                sm_scale=sm_scale,
+                d_v=v_head_dim,
+            )
+        elif variant == "flydsl":
+            from sglang.srt.layers.attention.nsa.flydsl_kernel import (
+                flydsl_sparse_mla_decode_fp8,
+            )
+
+            return flydsl_sparse_mla_decode_fp8(
+                q=q_all,
+                kv_paged_uint8=kv_cache,
+                indices=page_table_1.unsqueeze(1),
+                sm_scale=sm_scale,
+                d_v=v_head_dim,
+            )
+        else:
+            raise ValueError(
+                f"Unknown SGLANG_NSA_TILELANG_VARIANT={variant!r}; "
+                f"expected one of: auto, bf16, fp8, flydsl."
+            )
 
     def _forward_aiter(
         self,
