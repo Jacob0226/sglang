@@ -210,10 +210,13 @@ def _adapter_bf16(q, kv_bf16_paged_round, kv_fp8_paged, indices, sm_scale, d_v):
         tilelang_sparse_fwd,
     )
 
-    # Existing kernel signature: kv ~ (seq_len_kv, dim_total) bf16, i.e.
-    # the flattened paged buffer.
+    # tilelang_sparse_fwd signature: kv ~ (seq_len_kv, kv_group=1, dim_total)
+    # bf16 (the function asserts kv.dim() == 3 and unsqueezes a leading
+    # batch dim internally).
     nb, bs, _, dim_total = kv_bf16_paged_round.shape
-    kv_flat = kv_bf16_paged_round.view(nb * bs, dim_total).contiguous()
+    kv_flat = (
+        kv_bf16_paged_round.view(nb * bs, 1, dim_total).contiguous()
+    )
     out = tilelang_sparse_fwd(
         q=q,
         kv=kv_flat,
