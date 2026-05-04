@@ -165,6 +165,8 @@ NSA_CHOICES = [
     "flashmla_auto",
     "fa3",
     "tilelang",
+    "tilelang_fp8",  # TileLang variant: reads FP8 paged KV directly (saves ~43% HBM).
+    "flydsl",        # Hand-written FlyDSL single-pass FP8 fmha; gfx950 only.
     "aiter",
     "trtllm",
 ]

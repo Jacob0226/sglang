@@ -277,7 +277,13 @@ class NSAIndexerMetadata(BaseIndexerMetadata):
 
 
 _NSA_IMPL_T: TypeAlias = Literal[
-    "flashmla_sparse", "flashmla_kv", "fa3", "tilelang", "trtllm"
+    "flashmla_sparse",
+    "flashmla_kv",
+    "fa3",
+    "tilelang",
+    "tilelang_fp8",  # TileLang variant that consumes FP8 paged KV directly.
+    "flydsl",        # Hand-written FlyDSL single-pass FP8 fmha (gfx950 only).
+    "trtllm",
 ]
 
 
@@ -1569,6 +1575,26 @@ class NativeSparseAttnBackend(
                 sm_scale=layer.scaling,
                 v_head_dim=layer.v_head_dim,
             )
+        elif self.nsa_decode_impl == "tilelang_fp8":
+            if q_rope is not None:
+                q_all = concat_mla_absorb_q_general(q_nope, q_rope)
+            return self._forward_tilelang_fp8(
+                q_all=q_all,
+                kv_cache=kv_cache,
+                page_table_1=page_table_1,
+                sm_scale=layer.scaling,
+                v_head_dim=layer.v_head_dim,
+            )
+        elif self.nsa_decode_impl == "flydsl":
+            if q_rope is not None:
+                q_all = concat_mla_absorb_q_general(q_nope, q_rope)
+            return self._forward_flydsl(
+                q_all=q_all,
+                kv_cache=kv_cache,
+                page_table_1=page_table_1,
+                sm_scale=layer.scaling,
+                v_head_dim=layer.v_head_dim,
+            )
         elif self.nsa_decode_impl == "fa3":
             return self._forward_fa3(
                 q_rope=q_rope,
@@ -1811,6 +1837,52 @@ class NativeSparseAttnBackend(
         return tilelang_sparse_fwd(
             q=q_all,
             kv=kv_cache,
+            indices=page_table_1.unsqueeze(1),
+            sm_scale=sm_scale,
+            d_v=v_head_dim,
+        )
+
+    def _forward_tilelang_fp8(
+        self,
+        q_all: torch.Tensor,
+        kv_cache: torch.Tensor,
+        v_head_dim: int,
+        page_table_1: torch.Tensor,
+        sm_scale: float,
+    ) -> torch.Tensor:
+        """TileLang variant that consumes the FP8 paged KV layout directly.
+
+        Saves ~43% of HBM traffic vs. the bf16 path by reading FP8 nope +
+        per-tile fp32 scales + bf16 rope and dequantizing in shared memory.
+        """
+        from sglang.srt.layers.attention.nsa.tilelang_kernel_fp8 import (
+            tilelang_sparse_fwd_fp8,
+        )
+
+        return tilelang_sparse_fwd_fp8(
+            q=q_all,
+            kv_paged_uint8=kv_cache,
+            indices=page_table_1.unsqueeze(1),
+            sm_scale=sm_scale,
+            d_v=v_head_dim,
+        )
+
+    def _forward_flydsl(
+        self,
+        q_all: torch.Tensor,
+        kv_cache: torch.Tensor,
+        v_head_dim: int,
+        page_table_1: torch.Tensor,
+        sm_scale: float,
+    ) -> torch.Tensor:
+        """Hand-written FlyDSL single-pass FP8 fmha (gfx950 only)."""
+        from sglang.srt.layers.attention.nsa.flydsl_kernel import (
+            flydsl_sparse_mla_decode_fp8,
+        )
+
+        return flydsl_sparse_mla_decode_fp8(
+            q=q_all,
+            kv_paged_uint8=kv_cache,
             indices=page_table_1.unsqueeze(1),
             sm_scale=sm_scale,
             d_v=v_head_dim,
