@@ -23,9 +23,23 @@ Decode batch = 4 mirrors the ``conc=4`` profiling run; 16k KV tokens covers a
 typical decode-time KV pool for the in=8192 input-length benchmark with
 headroom.  Override anything via env vars (``NSA_TEST_*``) below.
 
-Numerical correctness is checked against a slow PyTorch reference
-(``_reference_sparse_mla_decode``) for variants that successfully run; latency
-is measured via ``torch.cuda.Event`` after warmup.
+Each kernel's output is compared against **two** references:
+
+  * ``max-abs vs ref``  -- against a slow fp32 PyTorch reference
+                          (``_reference_sparse_mla_decode``).  Loose tolerance;
+                          catches catastrophic numerical bugs.
+  * ``max-abs vs bf16`` -- against the **shipping bf16 baseline kernel
+                           output** (whichever ``tilelang_sparse_fwd`` is
+                           currently in production).  Strict comparison;
+                           this is what guarantees a candidate kernel is
+                           safe to ship.  ``bf16`` itself shows ``(self)``.
+
+The status column says ``FAIL_REF`` if the kernel diverges from the fp32
+reference, ``FAIL_BF16`` if it agrees with the reference but disagrees with
+the bf16 baseline (e.g. drift from a regression), or ``OK`` if both pass
+``cfg.tolerance``.  Latency is measured via ``torch.cuda.Event`` after
+warmup; ``bf16`` is forced to run first so its output and timing are
+available for the other rows.
 
 This is a stand-alone script -- no pytest or sglang server required -- so you
 can iterate on a single kernel without running e2e.
@@ -320,11 +334,22 @@ def run(cfg: TestConfig) -> int:
                   file=sys.stderr)
             return 2
 
+    # Always force bf16 to run first if it's in the selection -- we use its
+    # output as the production-baseline reference for the "vs bf16" column.
+    # This is a strictly tighter check than "vs PyTorch fp32 ref" because
+    # any new variant must match what's already shipping.
+    if "bf16" in selected and selected[0] != "bf16":
+        selected = ["bf16"] + [k for k in selected if k != "bf16"]
+
     print()
-    print(f"{'kernel':<8} | {'max-abs vs ref':<14} | {'avg ms':>8} | {'speedup':>7} | status")
-    print("-" * 78)
+    print(
+        f"{'kernel':<8} | {'max-abs vs ref':<14} | {'max-abs vs bf16':<15} | "
+        f"{'avg ms':>8} | {'speedup':>7} | status"
+    )
+    print("-" * 100)
 
     bf16_time: Optional[float] = None
+    bf16_out: Optional[torch.Tensor] = None
     failures = 0
     for name in selected:
         adapter = adapters[name]
@@ -343,28 +368,61 @@ def run(cfg: TestConfig) -> int:
         try:
             out = call()
             torch.cuda.synchronize()
-            err = _max_abs_diff(out, ref)
-            ok = err <= cfg.tolerance
-            status = "OK" if ok else f"FAIL (>{cfg.tolerance})"
+            err_ref = _max_abs_diff(out, ref)
+            if bf16_out is not None and name != "bf16":
+                err_bf16 = _max_abs_diff(out, bf16_out)
+            elif name == "bf16":
+                # bf16 vs itself is trivially zero -- we'll display "(self)"
+                # so the column unambiguously shows the baseline.
+                err_bf16 = 0.0
+            else:
+                # bf16 not in selection or didn't run; no baseline available.
+                err_bf16 = None
+
+            # Verdict uses BOTH thresholds: vs PyTorch fp32 ref (loose
+            # tolerance, catches all numerical issues) AND vs bf16 baseline
+            # (strict: the new kernel must agree with shipping behavior).
+            ok_ref = err_ref <= cfg.tolerance
+            ok_bf16 = err_bf16 is None or err_bf16 <= cfg.tolerance
+            ok = ok_ref and ok_bf16
+            if ok:
+                status = "OK"
+            elif not ok_ref:
+                status = f"FAIL_REF (>{cfg.tolerance})"
+            else:
+                status = f"FAIL_BF16 (>{cfg.tolerance})"
         except NotImplementedError as e:
-            print(f"{name:<8} | {'-':<14} | {'-':>8} | {'-':>7} | "
-                  f"SKIP ({type(e).__name__}: {e})")
+            print(
+                f"{name:<8} | {'-':<14} | {'-':<15} | {'-':>8} | {'-':>7} | "
+                f"SKIP ({type(e).__name__}: {e})"
+            )
             continue
         except Exception as e:
             failures += 1
-            print(f"{name:<8} | {'-':<14} | {'-':>8} | {'-':>7} | "
-                  f"ERROR ({type(e).__name__}: {e})")
+            print(
+                f"{name:<8} | {'-':<14} | {'-':<15} | {'-':>8} | {'-':>7} | "
+                f"ERROR ({type(e).__name__}: {e})"
+            )
             if os.getenv("NSA_TEST_VERBOSE_ERR"):
                 traceback.print_exc()
             continue
+
+        # Stash bf16 baseline output before benchmarking (so bench-only
+        # failures don't affect downstream comparisons).
+        if name == "bf16":
+            bf16_out = out.detach().clone()
 
         # Bench
         try:
             avg_ms = _benchmark(call, cfg.warmup, cfg.iters)
         except Exception as e:
             failures += 1
-            print(f"{name:<8} | {err:<14.5f} | {'-':>8} | {'-':>7} | "
-                  f"BENCH-ERROR ({type(e).__name__}: {e})")
+            err_bf16_str = f"{err_bf16:.5f}" if err_bf16 is not None else "-"
+            print(
+                f"{name:<8} | {err_ref:<14.5f} | {err_bf16_str:<15} | "
+                f"{'-':>8} | {'-':>7} | "
+                f"BENCH-ERROR ({type(e).__name__}: {e})"
+            )
             continue
 
         if name == "bf16":
@@ -375,8 +433,16 @@ def run(cfg: TestConfig) -> int:
             else "-"
         )
 
+        if name == "bf16":
+            err_bf16_str = "(self)"
+        elif err_bf16 is None:
+            err_bf16_str = "-"
+        else:
+            err_bf16_str = f"{err_bf16:.5f}"
+
         print(
-            f"{name:<8} | {err:<14.5f} | {avg_ms:>8.3f} | {speedup:>7} | {status}"
+            f"{name:<8} | {err_ref:<14.5f} | {err_bf16_str:<15} | "
+            f"{avg_ms:>8.3f} | {speedup:>7} | {status}"
         )
 
     print()
