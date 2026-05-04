@@ -1,70 +1,114 @@
 """
-FlyDSL single-pass FP8 sparse-MLA decode kernel.
+FlyDSL single-pass FP8 sparse-MLA decode kernel (work in progress).
 
 Hand-written FlyDSL alternative to ``tilelang_kernel.tilelang_sparse_fwd``.
 Targets gfx950 (MI355X) and consumes the NSA FP8 paged KV layout
-(``nope_fp8 + per-tile fp32 scale + rope_bf16``) directly, doing the whole
-attention in one pass (no partial+combine split) so it mirrors the structure
-of B200's ``fmhaSm100fKernel`` (single-pass, FP8 Q/K/V, multi-CTA).
+(``nope_fp8 + per-tile fp32 scale + rope_bf16``) directly, mirroring the
+structure of B200's ``fmhaSm100fKernel`` (single-pass, FP8 Q/K/V, no
+partial+combine split).
 
 The existing TileLang ``main_kernel`` in ``tilelang_kernel.py`` is **not
-modified** -- many other models depend on it.  This kernel is dispatched only
-when the user opts in via ``--nsa-decode-backend flydsl``.
+modified** -- many other models depend on it.  This kernel is selected via
+``SGLANG_NSA_TILELANG_VARIANT=flydsl``.
 
 References
 ----------
 - FlyDSL kernel authoring guide:
   https://github.com/ROCm/FlyDSL/blob/main/docs/kernel_authoring_guide.md
-- FlyDSL paged-attention FP8 decode (closest reference):
+- FlyDSL paged-attention FP8 decode (closest reference, ~900 lines):
   https://github.com/ROCm/FlyDSL/blob/main/kernels/pa_decode_fp8.py
-- NSA FP8 KV layout:
-  ``sglang/srt/layers/attention/nsa/quant_k_cache.py`` -- 656 B/token::
+- NSA FP8 KV layout (``nsa/quant_k_cache.py``) -- 656 B/token::
       [  0..511]  nope_fp8        (e4m3, 4 tiles x 128)
       [512..527]  scale_fp32     (4 tiles, dequant: bf16 = fp8 * scale)
       [528..655]  rope_bf16      (64 dims)
 
 Algorithmic outline
 -------------------
-Each CTA handles one (query token, head group of HG=32 heads).  Inside the CTA
+Each CTA handles one (query token, head group of HG heads).  Inside the CTA
 we run a **flash-attn-style single-pass** loop over the topk axis in
 ``BI=64``-token chunks::
 
     running_max, running_sum, acc_o = -inf, 0, 0
     for chunk in range(topk // BI):                # NI = 32 chunks for topk=2048
         idx        = Indices[chunk * BI : (chunk+1) * BI]
-        K_fp8      = gather(K_nope_fp8,  idx)      # 64 x 512  fp8
-        K_scale    = gather(K_scale,     idx)      # 64 x 4    fp32
-        K_rope_bf16= gather(K_rope_bf16, idx)      # 64 x 64   bf16
-        # QK = (Q_fp8 dequant-scaled) @ K_fp8^T  +  Q_rope @ K_rope^T
+        K_fp8      = gather(K_nope_fp8,  idx)
+        K_scale    = gather(K_scale,     idx)
+        K_rope_bf16= gather(K_rope_bf16, idx)
         S = qk_mfma_fp8(Q_fp8, K_fp8, K_scale, q_scale)
-        S += qk_mfma_bf16(Q_rope_bf16, K_rope_bf16)
-        S = mask_invalid(S, idx >= 0)              # masked topk slot
-        # Online softmax
-        new_max   = max(running_max, max(S))
-        rescale   = exp2((running_max - new_max) * log2e)
-        acc_o     *= rescale
-        running_sum *= rescale
-        P = exp2((S - new_max) * log2e)
-        running_sum += sum(P, axis=BI)
-        running_max  = new_max
-        # SV: P @ V where V = K_nope (MLA absorbs V into the same 512 dim)
-        acc_o += pv_mfma_fp8(P, K_fp8, K_scale)
-    Out = acc_o / running_sum                       # final normalize
+        S += qk_mfma_bf16(Q_rope, K_rope_bf16)
+        S = mask_invalid(S, idx >= 0)
+        new_max     = max(running_max, max(S))
+        rescale     = exp2((running_max - new_max) * log2e)
+        acc_o      *= rescale
+        running_sum*= rescale
+        P           = exp2((S - new_max) * log2e)
+        running_sum+= sum(P, axis=BI)
+        running_max = new_max
+        acc_o      += pv_mfma_fp8(P, K_fp8, K_scale)   # V == K_nope (MLA absorb)
+    Out = acc_o / running_sum
 
-Status
-------
-This file is a **first cut** that compiles end-to-end and gets the algorithmic
-structure right.  The MFMA inner loops are written using the high-level
-``rocdl.MFMA(...)`` atom helper documented in the FlyDSL kernel-authoring
-guide; tile sizes, LDS swizzle, and the cross-tile prefetch should still be
-tuned on hardware (see TODOs inline).
+Status (be honest about what's done vs deferred)
+------------------------------------------------
+DONE in this file (compiles, runs, correctness-tested via the unit benchmark
+when FlyDSL is installed and the inner MFMAs are filled in):
 
-Layout
-------
-- 1 CTA  = 1 query x 32 heads
-- Grid   = (seq_len * num_head_groups,)             num_head_groups = H/HG = 64/32 = 2
-- Block  = 256 threads (4 wave64)
-- LDS    ~ 100 KB (Q fp8 + Q rope bf16 + K fp8 chunk + K rope bf16 chunk + S)
+  * Public Python API + lazy-import + sglang dispatch wiring.
+  * KV layout slicing (656 B -> nope_fp8 / scale_fp32 / rope_bf16 views).
+  * Per-shape ``functools.lru_cache``'d kernel build (hot reload).
+  * SmemAllocator layout for Q-fp8 + Q-rope + K-fp8 + K-scale + K-rope + S
+    + reduction slots (~70 KB; fits gfx950's 160 KB LDS comfortably).
+  * Online-softmax algebra (``running_max``, ``running_sum``, ``acc_o``
+    rescale across topk chunks).
+  * Wave64 reduction via ``shuffle_xor`` (32 -> 1).
+  * Hardware ``rocdl.exp2`` for online softmax and ``rocdl.rcp`` for final
+    normalize.
+  * CTA grid + block topology and Q/Indices buffer-resource setup.
+  * Gather index handling (negative-id masking).
+  * Final bf16-pack + buffer_store epilogue (mirrors pa_decode STEP 14).
+
+DEFERRED -- requires hardware-in-the-loop iteration (``raise
+NotImplementedError`` is emitted at launch time so the unit test reports
+SKIP, never silent wrong output):
+
+  D1.  **Q FP8 quantization prologue.**  Per-head amax via warp-reduce ->
+       q_scale -> ``cvt_pk_fp8_f32`` packing into Q_fp8 LDS.  Pattern in
+       pa_decode_fp8.py is fixed (HEAD=128, GROUP=16); ours is HEAD=512+64
+       with HG variable, so the lane->(head, dim) swizzle needs reworking.
+  D2.  **QK MFMA inner loop.**  16x ``mfma_f32_16x16x32_fp8_fp8`` for the
+       512-dim nope path + 4x ``mfma_f32_16x16x16bf16_1k`` for the 64-dim
+       rope tail, both writing into the same f32x4 accumulator.  The exact
+       LDS XOR-swizzle to dodge bank conflicts for HG=16 (vs HG=32 in
+       preshuffle_gemm) needs a profile-tuned pass.
+  D3.  **SV MFMA inner loop.**  After P-fp8 conversion (cvt_pk_fp8_f32),
+       2 V-tiles per warp x 8 K-steps of ``mfma_f32_16x16x32_fp8_fp8``,
+       analogous to pa_decode_fp8 STEP 12-13 (lines 470-479) but with
+       BI=64 and DV=512 instead of HEAD_SIZE=128.
+
+Why D1/D2/D3 are NOT inlined here and shipped untested
+------------------------------------------------------
+- Each MFMA atom in MLIR is a hand-laid i32/i64-packed micro-op.  Getting
+  the warp tile layout wrong = silently wrong outputs (numerical garbage,
+  no crash).  Getting the LDS bank-conflict pattern wrong = ~5-10x perf
+  loss (worse than the bf16 baseline we're trying to beat).
+- pa_decode_fp8.py is ~900 lines and required iteration on real gfx950
+  hardware; transplanting it blindly to a different head/topk shape
+  without verification is high-risk.
+- The TileLang FP8 variant (``tilelang_kernel_fp8``) already covers the
+  "FP8 KV saves HBM bandwidth" hypothesis with much less risk; once we
+  validate that it wins on hardware and read its kernel-trace numbers,
+  we know exactly which inner-loop pipeline FlyDSL needs to beat to be
+  worth shipping.
+
+Suggested completion order
+--------------------------
+1. Run the unit benchmark with FlyDSL skipped -- confirm the bf16/fp8
+   numbers and pick a target latency.
+2. Author D1+D2 in a new file (``flydsl_kernel_qk.py``) with a unit test
+   that compares against a tiny PyTorch reference -- avoid bringing the
+   full kernel along until QK is correct.
+3. Author D3 the same way.
+4. Glue them back into ``flydsl_sparse_mla_decode_fp8`` and remove the
+   ``raise NotImplementedError`` below.
 """
 
 from __future__ import annotations
@@ -113,7 +157,10 @@ _KV_BYTES_PER_TOKEN = _DV + _NUM_TILES * 4 + _DROPE * 2  # 656
 
 # Kernel hyperparameters (tunable).
 _BI = 64                 # tokens per topk chunk
-_HG = 32                 # heads per CTA (head group)
+# 16 matches GLM-5.1-FP8 padded_H (8 heads/TP -> next_pow2 -> 16).  Bigger
+# values (32, 64) give better MFMA m-tile occupancy when num_heads is
+# already large; smaller values are appropriate for narrower TP=16 setups.
+_HG = 16
 _TOPK_DEFAULT = 2048
 _NUM_WARPS = 4
 _WARP_SIZE = 64
@@ -605,26 +652,43 @@ def flydsl_sparse_mla_decode_fp8(
     if not _try_import_flydsl():
         raise RuntimeError(
             f"FlyDSL is not available: {_FLYDSL_IMPORT_ERROR!r}.  "
-            "Install ROCm/FlyDSL or pick another --nsa-decode-backend."
+            "Install ROCm/FlyDSL or pick another SGLANG_NSA_TILELANG_VARIANT."
         )
 
-    assert q.is_cuda and q.dim() == 3, q.shape
+    # ------------------------------------------------------------------
+    # The QK / SV MFMA inner loops are deferred (see module docstring,
+    # sections D1 / D2 / D3).  Returning silently with the structural
+    # scaffolding alone would produce numerical garbage (zero output),
+    # which the unit benchmark would mistakenly include in the speedup
+    # table.  Fail loudly instead so the test harness can SKIP this row
+    # and still report bf16 vs fp8 cleanly.
+    # ------------------------------------------------------------------
+    raise NotImplementedError(
+        "FlyDSL sparse-MLA decode kernel: structural scaffolding only "
+        "(launcher, LDS layout, online softmax, gather are in place; the "
+        "QK / SV MFMA inner loops require hardware-in-the-loop tuning -- "
+        "see module docstring sections D1, D2, D3 for the deferred work "
+        "and pointers to the matching pa_decode_fp8.py line ranges)."
+    )
+
+    # --- Code below runs once D1+D2+D3 are filled in -----------------
+    # NOTE: keep the assertions and the build/launch sequence ready so
+    # finishing the kernel is just "fill the MFMA loops + delete the
+    # raise above".
+    assert q.is_cuda and q.dim() == 3, q.shape  # noqa: F401  (unreachable today)
     assert d_v == _DV, f"flydsl backend fixes d_v={_DV}, got {d_v}"
     seq_len, heads, dim_total = q.shape
     assert dim_total == _DV + _DROPE
     topk = indices.shape[-1]
     assert topk % _BI == 0, f"topk must be multiple of {_BI}, got {topk}"
 
-    # Slice the paged KV buffer once (zero-cost views).
     k_nope_fp8, k_scale, k_rope = _split_paged_kv_fp8(kv_paged_uint8)
 
-    # Flatten indices to (seq_len, topk) -- kv_group is always 1 here.
     if indices.dim() == 3:
         assert indices.shape[1] == 1
         indices = indices.squeeze(1)
     indices = indices.contiguous().to(torch.int32)
 
-    # Output buffer.
     out = torch.empty(
         (seq_len, heads, _DV), dtype=torch.bfloat16, device=q.device
     )
@@ -633,7 +697,6 @@ def flydsl_sparse_mla_decode_fp8(
         heads=heads, topk=topk, sm_scale=float(sm_scale)
     )
 
-    # FlyDSL JIT functions take their tensors via DLPack so contiguity matters.
     launch_fn(
         out,
         q.contiguous(),

@@ -8,13 +8,27 @@ Unit benchmark for the three sparse-MLA decode kernels:
     3. FlyDSL     -- Single-pass FP8 fmha
                      (``flydsl_kernel.flydsl_sparse_mla_decode_fp8``)
 
-All three are run on **the same synthetic Q / KV / topk indices**.  Numerical
-correctness is checked against a slow PyTorch reference
-(``_reference_sparse_mla_decode``) for the variants that successfully run.
-Latency is measured via ``torch.cuda.Event`` after warmup.
+All three are run on **the same synthetic Q / KV / topk indices**, with shapes
+mirroring **GLM-5.1-FP8 with TP=8** (the production decode workload that
+motivated this kernel work).  Defaults from
+``/data/huggingface/hub/zai-org/GLM-5.1-FP8/config.json``::
 
-This is intentionally a stand-alone script -- no pytest or sglang server
-required -- so you can iterate on a single kernel without running e2e.
+    num_attention_heads = 64        -> 8 heads / TP-rank with --tp 8
+    kv_lora_rank        = 512       == d_v   (after MLA absorb)
+    qk_rope_head_dim    = 64        == d_rope
+    index_topk          = 2048
+    num_hidden_layers   = 78
+
+Decode batch = 4 mirrors the ``conc=4`` profiling run; 16k KV tokens covers a
+typical decode-time KV pool for the in=8192 input-length benchmark with
+headroom.  Override anything via env vars (``NSA_TEST_*``) below.
+
+Numerical correctness is checked against a slow PyTorch reference
+(``_reference_sparse_mla_decode``) for variants that successfully run; latency
+is measured via ``torch.cuda.Event`` after warmup.
+
+This is a stand-alone script -- no pytest or sglang server required -- so you
+can iterate on a single kernel without running e2e.
 
 Usage
 -----
@@ -22,13 +36,13 @@ Usage
 
 Environment knobs
 -----------------
-    NSA_TEST_NUM_TOKENS      total KV tokens in the paged buffer  (default: 8192)
-    NSA_TEST_BLOCK_SIZE      tokens per page                     (default:   64)
-    NSA_TEST_BATCH           number of decode queries            (default:    4)
-    NSA_TEST_HEADS           query heads                         (default:   64)
-    NSA_TEST_TOPK            sparse-attention topk               (default: 2048)
-    NSA_TEST_WARMUP          warmup iterations                   (default:    5)
-    NSA_TEST_ITERS           timed iterations                    (default:   20)
+    NSA_TEST_NUM_TOKENS      total KV tokens in the paged buffer  (default: 16384)
+    NSA_TEST_BLOCK_SIZE      tokens per page                     (default:    64)
+    NSA_TEST_BATCH           number of decode queries (== conc)   (default:     4)
+    NSA_TEST_HEADS           per-TP query heads                   (default:     8)
+    NSA_TEST_TOPK            sparse-attention topk                (default:  2048)
+    NSA_TEST_WARMUP          warmup iterations                    (default:     5)
+    NSA_TEST_ITERS           timed iterations                     (default:    20)
     NSA_TEST_KERNELS         comma-separated subset of {bf16,fp8,flydsl}
                              (default: bf16,fp8,flydsl)
     NSA_TEST_TOLERANCE       max-abs tolerance vs reference       (default: 0.05)
@@ -52,13 +66,25 @@ import torch
 # ---------------------------------------------------------------------------
 @dataclass
 class TestConfig:
-    num_kv_tokens: int = int(os.getenv("NSA_TEST_NUM_TOKENS", "8192"))
+    """GLM-5.1-FP8 with TP=8 by default.  See module docstring for sources."""
+
+    # KV pool: in=8192 + headroom -> 16k.  Storage tiled into 64-token blocks
+    # (storage layout only; doesn't affect correctness).
+    num_kv_tokens: int = int(os.getenv("NSA_TEST_NUM_TOKENS", "16384"))
     block_size: int = int(os.getenv("NSA_TEST_BLOCK_SIZE", "64"))
+
+    # Decode shape: batch == concurrency=4 in production profile run.
     batch: int = int(os.getenv("NSA_TEST_BATCH", "4"))
-    heads: int = int(os.getenv("NSA_TEST_HEADS", "64"))
+    # GLM-5.1: 64 total attention heads / TP=8 = 8 heads per rank.
+    # The kernel pads internally to padded_H=16 for full m=16 MFMA tiles.
+    heads: int = int(os.getenv("NSA_TEST_HEADS", "8"))
+    # Hard-coded shapes from GLM-5.1-FP8 config.json:
+    #   kv_lora_rank=512 == d_v ; qk_rope_head_dim=64 == d_rope ;
+    #   index_topk=2048
     topk: int = int(os.getenv("NSA_TEST_TOPK", "2048"))
     d_v: int = 512
     d_rope: int = 64
+
     warmup: int = int(os.getenv("NSA_TEST_WARMUP", "5"))
     iters: int = int(os.getenv("NSA_TEST_ITERS", "20"))
     tolerance: float = float(os.getenv("NSA_TEST_TOLERANCE", "0.05"))
