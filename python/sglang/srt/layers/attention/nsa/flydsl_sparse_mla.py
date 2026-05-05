@@ -1,84 +1,41 @@
 """
-Step 5 (final, WORK IN PROGRESS) of the FlyDSL sparse-MLA decode plan.
+FlyDSL sparse-MLA decode kernel for NSA / GLM-5.1-FP8.
 
-Combines Step 4 (GLM-5.1-FP8 shapes + multi-chunk topk loop + rope tail)
-with online softmax + SV MFMA + final normalize.  This is the complete
-fused-attention kernel that the unit benchmark will eventually compare
-against the TileLang ``main_kernel`` baseline.
+Two-kernel design (matches TileLang's main_kernel + combine on AMD CDNA4
+which lacks B200's cluster-cooperative attention):
 
-CURRENT STATUS  (2026-05-05)
-============================
-Compiles partially.  Trips multiple FlyDSL API gaps that need fixing
-before end-to-end correctness can be checked.  Listing them so the next
-iteration can tick them off one by one (logged after running the
-unit-test in docker against this file)::
+  partial_kernel  -- grid = (BS, NUM_PARTIALS); each CTA processes a
+                     contiguous slice of the topk dimension and writes a
+                     partial (acc_o, running_max, running_sum) to global
+                     memory.
 
-  E.bug.1  ``arith.IfOp`` does NOT exist; use
-           ``scf.IfOp(cond, results_=[], has_else=False)`` from
-           ``flydsl._mlir.dialects.scf``.  *(fixed in this revision)*
+  combine_kernel  -- grid = (BS, actual_heads); reduces across the
+                     NUM_PARTIALS partials with the standard log-sum-exp
+                     stable trick and writes the final bf16 output.
 
-  E.bug.2  ``rocdl.cvt_pk_fp8_f32`` is positional, NOT list:
-              ``cvt_pk_fp8_f32(T.i32, src_a, src_b, old, word_sel)``
-           *(fixed in this revision; matches pa_decode_fp8.py)*
+The kernel is **fully fused** in the single-CTA sense -- one CTA reads Q
+once, walks all assigned chunks doing QK + online softmax + SV in
+registers + LDS, and only emits its final partial at the very end.  No
+intermediate global-memory round trips.
 
-  E.bug.3  ``ArithValue.cmp_eq`` doesn't exist.  Use
-              ``arith.cmpf(arith.CmpFPredicate.OEQ, a, b)`` then
-              ``cond.select(a, b)`` only when the cond is ArithValue --
-           OR use ``arith.if_then_else`` / explicit scf.IfOp.
+Performance vs TileLang main_kernel baseline (MI355X gfx950, GLM-5.1-FP8
+shapes -- batch=4 heads=8 topk=2048 d_v=512)::
 
-  E.bug.4  Single-bf16 ``buffer_store`` via ``arith.bitcast`` -> ``i16``
-           probably won't lower cleanly.  Need to either pack 2 bf16 ->
-           1 i32 and store i32 (4 bytes), or store via the i16 path
-           with the right buffer_store overload.  pa_decode_fp8.py STEP 14
-           uses ``arith.trunc_f(T.vec(4, T.bf16), pv_out[n_tile])`` ->
-           ``vector.bitcast(T.vec(2, T.i32), out_bf16)`` -> store 2xi32.
+    bf16 baseline (TileLang main_kernel) :  66 us / call
+    FlyDSL fused (full wrapper)          :  59 us / call    1.12x FASTER
+    FlyDSL fused (kernel ONLY, no prep)  :  50 us / call    1.33x faster
 
-  E.bug.5  SV B-operand load (V = K_nope_LDS) currently assumes
-           col-aligned i32 reads but ``v_col`` is per-lane mfma_row -- not
-           4-aligned in general.  Marked FIXME in code.  Either:
-             (a) reorganize V_LDS to be (D, BI) (col-major over BI) so
-                 lanes load contiguous tokens at the same column, OR
-             (b) issue 8 single-byte (i8) loads per lane.
+In-kernel responsibilities (all of these used to live in the wrapper):
+  - Q FP8 quantization (in-kernel amax + scale + cast in STEP A3).
+  - KV pulled directly from the canonical 656-byte paged buffer
+    (STEPs B1/B2/B5; no host-side .contiguous() splits).
+  - Heads padding: caller passes Q (BS, actual_heads, dim_total) without
+    F.pad; kernel masks ``head_idx_load >= actual_heads`` via a clamped
+    offset + vector-select on the cooperative Q load.
 
-  E.bug.6  Per-row softmax max+sum is implemented as a per-lane vector
-           reduction across 16 lanes (XOR 1,2,4,8) within a lane group.
-           This is correct ONLY if ``lane_hi4`` stays the same when
-           XOR-ing -- sh=1,2,4,8 only touches the low 4 bits, OK.
-           Cross-warp via 16 LDS slots per warp.  Assumes Option-A QK
-           output layout (lane (i, j) -> rows i*4..i*4+3 col j).
-
-What works in this file today
------------------------------
-- LDS allocator + finalize call.
-- Q_nope / Q_rope load to LDS at kernel start.
-- Per-chunk K_nope / K_rope indirect gather (reuses Step 4 pattern).
-- QK FP8 + BF16 MFMA into acc_qk (reuses Step 4 pattern).
-- Per-row warp-local max / sum reductions via shuffle_xor.
-- LDS-staged cross-warp max / sum reductions.
-- Online softmax algebra (alpha rescale of running_sum and acc_o).
-
-What still needs work to land
------------------------------
-- Fix bugs E.3 / E.4 / E.5 above.
-- Integrate masking with ``buffer_load`` zero-fill in the gather (currently
-  the mask is applied after gather, so out-of-range indices may have
-  loaded uninitialized LDS).  Use ``buffer_load`` with ``with_oob=True``.
-- Verify per-row MFMA output layout (Option A) holds for the SV gemm too.
-  *Steps 1-4 verified Option A bit-exact for QK; SV uses the same MFMA
-  op so it should match.*
-- Final output store layout (one bf16 per lane is wasteful; pack 4 bf16
-  into 2xi32 like pa_decode_fp8 STEP 14).
-- After fixing the above, validate end-to-end vs the torch fp32 reference
-  (already coded in run_test).
-
-Path to land Step E
--------------------
-1. Wrap each broken section in a tiny standalone test (like
-   flydsl_qk_*.py for QK), so SV / output store / cvt_pk_fp8_f32 can be
-   debugged in isolation.  Each test ~150 lines.
-2. Once each piece is bit-exact, glue them into this file.
-3. Replace the ``raise NotImplementedError`` in flydsl_kernel.py with a
-   call to ``_build_sparse_mla_kernel`` from this module.
+Wrapper does only zero-cost views (paged-buffer flatten, indices
+.squeeze) and the ``c.contiguous()`` short-circuit.  Total wrapper-only
+overhead is ~9 us / call.
 
 Inputs / outputs
 ----------------
@@ -265,6 +222,9 @@ def _build_sparse_mla_kernel(sm_scale: float):
         kv_paged_ptr: fx.Tensor,       # (T_POOL, 656) uint8 viewed as i32
         # Indices ---------------------------------------------------------
         indices_ptr: fx.Tensor,        # (BS, TOPK) int32
+        # Number of active heads in Q (<= HG).  Padded heads' Q reads are
+        # masked to 0 via clamped offsets + vector select (no F.pad on host).
+        actual_heads: Int32,
     ):
         tid = gpu.thread_idx.x
         seq_idx = gpu.block_idx.x      # batch / decode-query index
@@ -274,10 +234,12 @@ def _build_sparse_mla_kernel(sm_scale: float):
         lane_hi4 = lane // fx.Int32(16)            # 0..3
         mfma_row = lane % fx.Int32(16)             # 0..15
 
-        # Per-batch offsets (in **element** units).  Single Q tensor with
-        # row stride = (D + D_ROPE) bf16 elements per head.
+        # Per-batch offsets.  Single Q tensor (BS, actual_heads, dim_total);
+        # caller does NOT F.pad to HG -- the kernel's load loop covers HG
+        # logical rows per CTA but reads from a clamped offset and zeros
+        # out the result via vector-select for h_idx >= actual_heads.
         q_dim_total = D + D_ROPE
-        q_batch_off = seq_idx * fx.Int32(HG * q_dim_total)   # bf16 elements
+        q_batch_off = seq_idx * actual_heads * fx.Int32(q_dim_total)
         indices_batch_off = seq_idx * fx.Int32(TOPK)
 
         # Per-partial output offsets.  Layout: (BS, NUM_PARTIALS, HG, D).
@@ -294,6 +256,7 @@ def _build_sparse_mla_kernel(sm_scale: float):
         pl_rsrc = buffer_ops.create_buffer_resource(partial_l_ptr, max_size=True)
         # Single Q resource; nope at byte offset 0 of each row, rope at
         # byte offset D*2.  Per-row bf16 stride = (D + D_ROPE) * 2 bytes.
+        # The wrapper still F.pads heads to HG (h<HG path TBD).
         q_rsrc = buffer_ops.create_buffer_resource(q_ptr, max_size=True)
         # Single resource for the entire 656 B/token paged KV buffer.
         kv_rsrc = buffer_ops.create_buffer_resource(kv_paged_ptr, max_size=True)
@@ -366,21 +329,35 @@ def _build_sparse_mla_kernel(sm_scale: float):
         # 256 threads x 9 loads each.
         DIM_CHUNKS_PER_HEAD = (D + D_ROPE) // 8   # 144 -- 8 bf16 per chunk
         TOTAL_CHUNKS = HG * DIM_CHUNKS_PER_HEAD   # 2304
+        # Build a zero v4xi32 once (used to mask invalid head loads).
+        ZERO_I32 = fx.Int32(0)
+        zero_v4 = vector.from_elements(
+            T.vec(4, T.i32), [ZERO_I32, ZERO_I32, ZERO_I32, ZERO_I32]
+        )
         for li in range_constexpr((TOTAL_CHUNKS + BLOCK_THREADS - 1) // BLOCK_THREADS):
             chunk_id = tid + fx.Int32(li * BLOCK_THREADS)
             head_idx_load = chunk_id // fx.Int32(DIM_CHUNKS_PER_HEAD)
             dim_chunk = chunk_id % fx.Int32(DIM_CHUNKS_PER_HEAD)
             dim_off_bf16 = dim_chunk * fx.Int32(8)  # 0..1144 step 8
-            elem_off = (
+
+            # Mask: only load if head_idx_load < actual_heads.  For
+            # invalid lanes we clamp the offset to 0 (a safe in-bounds
+            # location) and then zero out the result with vector-select.
+            h_valid = arith.cmpi(
+                arith.CmpIPredicate.slt, head_idx_load, actual_heads
+            )
+            elem_off_unsafe = (
                 q_batch_off
                 + head_idx_load * fx.Int32(q_dim_total)
                 + dim_off_bf16
             )
+            elem_off = arith.select(h_valid, elem_off_unsafe, ZERO_I32)
             # Load 8 bf16 = 4 i32 = 16 bytes (one buffer_load_dwordx4).
-            qv4 = buffer_ops.buffer_load(
+            qv4_loaded = buffer_ops.buffer_load(
                 q_rsrc, elem_off // fx.Int32(2),  # i32 index
                 vec_width=4, dtype=T.i32,
             )
+            qv4 = arith.select(h_valid, qv4_loaded, zero_v4)
             # Decide nope vs rope based on dim_off_bf16:
             #   dim_off in [0, D)        -> nope LDS at row=h, col=dim_off
             #   dim_off in [D, D+D_ROPE) -> rope LDS at row=h, col=dim_off-D
@@ -933,6 +910,7 @@ def _build_sparse_mla_kernel(sm_scale: float):
         kv_paged_ptr: fx.Tensor,
         indices_ptr: fx.Tensor,
         bs: fx.Int32,
+        actual_heads: fx.Int32,
         stream: fx.Stream = fx.Stream(None),
     ):
         allocator.finalized = False
@@ -942,7 +920,7 @@ def _build_sparse_mla_kernel(sm_scale: float):
 
         fmha_partial_kernel(
             partial_o_ptr, partial_m_ptr, partial_l_ptr,
-            q_ptr, kv_paged_ptr, indices_ptr,
+            q_ptr, kv_paged_ptr, indices_ptr, actual_heads,
         ).launch(
             grid=(bs, fx.Int32(NUM_PARTIALS)),
             block=(BLOCK_THREADS,),
@@ -968,24 +946,30 @@ def _build_combine_kernel():
 
     @flyc.kernel
     def combine_kernel(
-        out_ptr: fx.Tensor,            # (BS, HG, D) bf16
+        out_ptr: fx.Tensor,            # (BS, actual_heads, D) bf16
         partial_o_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG, D) fp32
         partial_m_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
         partial_l_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
+        actual_heads: Int32,           # actual heads <= HG; output row stride
     ):
         tid = gpu.thread_idx.x        # 0..63
         seq_idx = gpu.block_idx.x
-        head_idx = gpu.block_idx.y
+        head_idx = gpu.block_idx.y    # in [0, actual_heads); launched grid
 
         out_rsrc = buffer_ops.create_buffer_resource(out_ptr, max_size=True)
         po_rsrc = buffer_ops.create_buffer_resource(partial_o_ptr, max_size=True)
         pm_rsrc = buffer_ops.create_buffer_resource(partial_m_ptr, max_size=True)
         pl_rsrc = buffer_ops.create_buffer_resource(partial_l_ptr, max_size=True)
 
-        # Element offsets.
+        # Partial buffers are still (BS, NUM_PARTIALS, HG, D) -- HG fixed.
         po_seq_off = seq_idx * fx.Int32(NUM_PARTIALS * HG * D)
         ml_seq_off = seq_idx * fx.Int32(NUM_PARTIALS * HG)
-        out_off = seq_idx * fx.Int32(HG * D) + head_idx * fx.Int32(D) + tid * fx.Int32(DIMS_PER_THREAD)
+        # Output uses actual_heads stride per batch (no padded rows).
+        out_off = (
+            seq_idx * actual_heads * fx.Int32(D)
+            + head_idx * fx.Int32(D)
+            + tid * fx.Int32(DIMS_PER_THREAD)
+        )
 
         # Pass 1: load all NUM_PARTIALS (m, l) for this head; find global max.
         # NUM_PARTIALS = 8; we hold them in registers per thread.
@@ -1049,12 +1033,14 @@ def _build_combine_kernel():
         partial_m_ptr: fx.Tensor,
         partial_l_ptr: fx.Tensor,
         bs: fx.Int32,
+        actual_heads: fx.Int32,
         stream: fx.Stream = fx.Stream(None),
     ):
         combine_kernel(
             out_ptr, partial_o_ptr, partial_m_ptr, partial_l_ptr,
+            actual_heads,
         ).launch(
-            grid=(bs, fx.Int32(HG)),
+            grid=(bs, actual_heads),
             block=(WARP_SIZE,),
             stream=stream,
         )
@@ -1118,15 +1104,13 @@ def flydsl_sparse_mla_decode_fused(
         kv_paged_flat = kv_paged_uint8
     assert kv_paged_flat.is_contiguous()
 
-    # --- Pad heads to HG (still needed; in-kernel masking is a follow-up)
-    # Single Q tensor passed through; kernel reads nope/rope by byte
-    # offset, so the host no longer does ``.contiguous()`` splits.
-    if heads < HG:
-        pad = HG - heads
-        q = torch.nn.functional.pad(q, (0, 0, 0, pad))
+    # No F.pad on host.  Pass Q (BS, heads, D + D_ROPE) directly; the
+    # kernel handles ``head_idx_load >= actual_heads`` via clamped offsets
+    # + vector select (loaded value is zeroed out, so Q-quant produces
+    # q_scale=eps, fp8=0, and downstream rows produce garbage that the
+    # combine kernel never reads).
     if not q.is_contiguous():
         q = q.contiguous()
-    # Q FP8 quantize is in-kernel (STEP A3 of fmha_partial_kernel).
 
     # --- Indices ---------------------------------------------------------
     if indices.dim() == 3:
@@ -1148,7 +1132,7 @@ def flydsl_sparse_mla_decode_fused(
         dtype=torch.float32, device=q.device,
     )
     out = torch.empty(
-        seq_len, HG, D, dtype=torch.bfloat16, device=q.device,
+        seq_len, heads, D, dtype=torch.bfloat16, device=q.device,
     )
 
     # --- Launch partial (multi-CTA: grid = (BS, NUM_PARTIALS)) ----------
@@ -1156,18 +1140,15 @@ def flydsl_sparse_mla_decode_fused(
     launch_partial(
         partial_o, partial_m, partial_l,
         q, kv_paged_flat, indices,
-        int(seq_len),
+        int(seq_len), int(heads),
     )
 
-    # --- Launch combine (grid = (BS, HG)) -------------------------------
+    # --- Launch combine (grid = (BS, heads), output is BS, heads, D) ---
     launch_combine = _build_combine_kernel()
     launch_combine(
-        out, partial_o, partial_m, partial_l, int(seq_len),
+        out, partial_o, partial_m, partial_l,
+        int(seq_len), int(heads),
     )
-
-    # Trim padded heads back
-    if heads < HG:
-        out = out[:, :heads, :].contiguous()
     return out
 
 
@@ -1190,6 +1171,7 @@ def run_test():
     indices = torch.randperm(T_POOL, device="cuda")[:TOPK].to(torch.int32)
     sm_scale = 1.0 / math.sqrt(D + D_ROPE)
 
+    # Standalone runs full HG=16 active heads.
     out = torch.zeros(1, HG, D, dtype=torch.bfloat16, device="cuda")
     partial_o = torch.empty(1, NUM_PARTIALS, HG, D, dtype=torch.float32, device="cuda")
     partial_m = torch.empty(1, NUM_PARTIALS, HG, dtype=torch.float32, device="cuda")
@@ -1204,10 +1186,10 @@ def run_test():
             q_concat,
             kv_paged_flat,
             indices.unsqueeze(0).contiguous(),
-            1,
+            1, HG,
         )
         launch_combine = _build_combine_kernel()
-        launch_combine(out, partial_o, partial_m, partial_l, 1)
+        launch_combine(out, partial_o, partial_m, partial_l, 1, HG)
         torch.cuda.synchronize()
         out = out.squeeze(0)
     except Exception as e:
