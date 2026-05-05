@@ -504,7 +504,6 @@ def _build_sparse_mla_kernel(sm_scale: float):
             # --- STEP B1: gather K_nope_chunk (direct paged read) -----
             # Read directly from the 656-byte paged KV buffer at byte
             # offset ``src_row * 656 + 0..511``.  i32 stride = 164.
-            # Eliminates the host-side ``.contiguous()`` copy (~15 us).
             for li in range_constexpr(K_NOPE_BYTES // 4 // BLOCK_THREADS):
                 lds_idx = tid + fx.Int32(li * BLOCK_THREADS)
                 token = lds_idx // fx.Int32(D_I32)
@@ -516,7 +515,6 @@ def _build_sparse_mla_kernel(sm_scale: float):
                 )
                 neg = arith.cmpi(arith.CmpIPredicate.slt, src_row, fx.Int32(0))
                 src_row_safe = arith.select(neg, fx.Int32(0), src_row)
-                # nope at i32 offset (src_row * 164) + k_i32
                 g_i32 = (
                     src_row_safe * fx.Int32(KV_I32_PER_TOKEN)
                     + fx.Int32(KV_NOPE_I32_OFFSET) + k_i32
@@ -528,10 +526,7 @@ def _build_sparse_mla_kernel(sm_scale: float):
                     [arith.index_cast(T.index, lds_idx)],
                 )
 
-            # --- STEP B2: gather K_rope_chunk (direct paged read) -----
-            # Rope at byte offset ``src_row * 656 + 528``; i32 row stride
-            # = 164, rope starts at i32 offset 132.  Eliminates the
-            # host-side rope ``.contiguous()`` copy (~10 us).
+            # --- STEP B2: gather K_rope_chunk (direct paged read, vec1) -
             for li in range_constexpr(K_ROPE_BYTES // 4 // BLOCK_THREADS):
                 lds_idx = tid + fx.Int32(li * BLOCK_THREADS)
                 token = lds_idx // fx.Int32(D_ROPE_I32)
@@ -934,27 +929,59 @@ def _build_sparse_mla_kernel(sm_scale: float):
 def _build_combine_kernel():
     """Reduce ``NUM_PARTIALS`` per-CTA partials into the final bf16 output.
 
-    Grid:  (BS, HG)   -- one CTA per (batch, head)
-    Block: 64 threads (one wave)
+    Layout (matches TileLang's combine):
+      Grid:  (BS, ceil(actual_heads / HEADS_PER_BLOCK))
+      Block: HEADS_PER_BLOCK warps * 64 lanes = 256 threads
+      Each warp handles one head (warp_id == head_local).
 
-    Each thread covers ``D / 64 = 8`` output dims.  It reads NUM_PARTIALS
-    ``(m, l, O[8 dims])`` triples, combines them via the standard flash
-    LSE-rescale, and writes the final bf16 output.
+    Per lane:
+      dims_per_thread = D / 64 = 8        (NUM_PARTIALS x 2 buffer_load
+                                          dwordx4 = 4 fp32 each; one
+                                          dwordx4 store of vec<4,i32>
+                                          packed from vec<8,bf16>)
+      reads NUM_PARTIALS x (m, l) -- redundantly per lane within a warp.
+      log-sum-exp combine, normalize, cast 8 bf16, ONE store.
+
+    NOTE on perf: this layout is structurally cleaner than the previous
+    ``grid=(BS, heads), 64 threads`` design (4x fewer CTAs, 8x fewer
+    stores) but on MI355X gfx950 the wall-clock wins out at zero -- both
+    designs measure ~22 us / call.  Combine seems to be limited by the
+    fp32 partial_O HBM-read latency rather than launch overhead or
+    store bandwidth.  Keeping the new layout because (a) it matches
+    TileLang's structure (easier to compare), (b) it leaves a smaller
+    surface area for future register-tile optimizations.
     """
     arch = _get_arch()
-    DIMS_PER_THREAD = D // WARP_SIZE   # 512 / 64 = 8
+    # 4 heads per block: covers GLM-5.1 8 heads in 2 CTAs per batch.
+    # 4 warps * 64 lanes = 256 threads per CTA, BS=4 -> 8 CTAs total.
+    HEADS_PER_BLOCK = 4
+    LANES_PER_WARP = WARP_SIZE        # 64
+    DIMS_PER_THREAD = D // LANES_PER_WARP   # 512 / 64 = 8
+    BLOCK_THREADS = HEADS_PER_BLOCK * LANES_PER_WARP  # 256
 
-    @flyc.kernel
+    @flyc.kernel(known_block_size=[BLOCK_THREADS, 1, 1])
     def combine_kernel(
         out_ptr: fx.Tensor,            # (BS, actual_heads, D) bf16
         partial_o_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG, D) fp32
         partial_m_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
         partial_l_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
-        actual_heads: Int32,           # actual heads <= HG; output row stride
+        actual_heads: Int32,           # output row stride per batch
     ):
-        tid = gpu.thread_idx.x        # 0..63
+        tid = gpu.thread_idx.x        # 0..255
         seq_idx = gpu.block_idx.x
-        head_idx = gpu.block_idx.y    # in [0, actual_heads); launched grid
+        block_y = gpu.block_idx.y     # 0..ceil(actual_heads/4)-1
+
+        warp_id = tid // fx.Int32(LANES_PER_WARP)   # 0..3 -> head local
+        lane_id = tid % fx.Int32(LANES_PER_WARP)    # 0..63
+
+        head_idx = block_y * fx.Int32(HEADS_PER_BLOCK) + warp_id
+
+        # Skip lanes whose head is past the active range (when
+        # actual_heads is not a multiple of HEADS_PER_BLOCK).  We can't
+        # use a CTA-level mask via grid, so we mask out via per-lane skip.
+        head_valid = arith.cmpi(
+            arith.CmpIPredicate.slt, head_idx, actual_heads
+        )
 
         out_rsrc = buffer_ops.create_buffer_resource(out_ptr, max_size=True)
         po_rsrc = buffer_ops.create_buffer_resource(partial_o_ptr, max_size=True)
@@ -964,22 +991,22 @@ def _build_combine_kernel():
         # Partial buffers are still (BS, NUM_PARTIALS, HG, D) -- HG fixed.
         po_seq_off = seq_idx * fx.Int32(NUM_PARTIALS * HG * D)
         ml_seq_off = seq_idx * fx.Int32(NUM_PARTIALS * HG)
-        # Output uses actual_heads stride per batch (no padded rows).
         out_off = (
             seq_idx * actual_heads * fx.Int32(D)
             + head_idx * fx.Int32(D)
-            + tid * fx.Int32(DIMS_PER_THREAD)
+            + lane_id * fx.Int32(DIMS_PER_THREAD)
         )
 
-        # Pass 1: load all NUM_PARTIALS (m, l) for this head; find global max.
-        # NUM_PARTIALS = 8; we hold them in registers per thread.
+        # Pass 1: load NUM_PARTIALS (m, l) for this head.  Clamp head_idx
+        # to 0 for invalid lanes so the load stays in-bounds.
+        head_idx_safe = arith.select(head_valid, head_idx, fx.Int32(0))
+
         ms = []
         ls = []
         for p in range_constexpr(NUM_PARTIALS):
-            m_off = ml_seq_off + fx.Int32(p * HG) + head_idx
-            l_off = m_off
+            m_off = ml_seq_off + fx.Int32(p * HG) + head_idx_safe
             m_p = buffer_ops.buffer_load(pm_rsrc, m_off, vec_width=1, dtype=T.f32)
-            l_p = buffer_ops.buffer_load(pl_rsrc, l_off, vec_width=1, dtype=T.f32)
+            l_p = buffer_ops.buffer_load(pl_rsrc, m_off, vec_width=1, dtype=T.f32)
             ms.append(m_p)
             ls.append(l_p)
 
@@ -987,7 +1014,7 @@ def _build_combine_kernel():
         for p in range_constexpr(NUM_PARTIALS - 1):
             m_global = m_global.maximumf(ms[p + 1])
 
-        # alpha[p] = exp(m_p - m_global); l_global = sum(alpha[p] * l_p).
+        # alpha[p] = exp2(m_p - m_global); l_global = sum(alpha[p] * l_p).
         alphas = []
         l_global = fx.Float32(0.0)
         for p in range_constexpr(NUM_PARTIALS):
@@ -995,36 +1022,53 @@ def _build_combine_kernel():
             alphas.append(a)
             l_global = l_global + a * ls[p]
 
-        # Pass 2: per thread, accumulate alpha[p] * partial_O[p, head, my-dims].
-        # Output: 8 fp32 values per thread, then divide by l_global, cast bf16.
+        # Pass 2: accumulate alpha[p] * partial_O[p, head, my-dims].
+        # Use vec_width=4 to halve the number of buffer_load instructions
+        # (8 fp32 = 2x dwordx4 instead of 8x single-fp32 reads).
+        # Keep accs as 8 scalar fp32 -- mfma-style accum, simple to scale.
         accs = [fx.Float32(0.0) for _ in range(DIMS_PER_THREAD)]
         for p in range_constexpr(NUM_PARTIALS):
             base_p = (
                 po_seq_off + fx.Int32(p * HG * D)
-                + head_idx * fx.Int32(D) + tid * fx.Int32(DIMS_PER_THREAD)
+                + head_idx_safe * fx.Int32(D)
+                + lane_id * fx.Int32(DIMS_PER_THREAD)
             )
-            for d in range_constexpr(DIMS_PER_THREAD):
-                v = buffer_ops.buffer_load(
-                    po_rsrc, base_p + fx.Int32(d),
-                    vec_width=1, dtype=T.f32,
+            v0 = buffer_ops.buffer_load(
+                po_rsrc, base_p,
+                vec_width=4, dtype=T.f32,
+            )
+            v1 = buffer_ops.buffer_load(
+                po_rsrc, base_p + fx.Int32(4),
+                vec_width=4, dtype=T.f32,
+            )
+            for d in range_constexpr(4):
+                accs[d] = accs[d] + alphas[p] * vector.extract(
+                    v0, static_position=[d], dynamic_position=[]
                 )
-                accs[d] = accs[d] + alphas[p] * v
+                accs[d + 4] = accs[d + 4] + alphas[p] * vector.extract(
+                    v1, static_position=[d], dynamic_position=[]
+                )
 
         # Avoid divide-by-zero for fully-masked queries.
         ZERO_F = fx.Float32(0.0)
         ONE_F = fx.Float32(1.0)
-        cond = arith.cmpf(arith.CmpFPredicate.OEQ, l_global, ZERO_F)
-        safe = arith.select(cond, ONE_F, l_global)
+        zero_div = arith.cmpf(arith.CmpFPredicate.OEQ, l_global, ZERO_F)
+        safe = arith.select(zero_div, ONE_F, l_global)
+        inv = ONE_F / safe
 
-        # Cast and store.  8 contiguous bf16 = 16 bytes per thread.
-        for d in range_constexpr(DIMS_PER_THREAD):
-            normed = accs[d] / safe
-            bf16_v = arith.trunc_f(T.bf16, normed)
-            i16_v = arith.bitcast(T.i16, bf16_v)
-            byte_off = (out_off + fx.Int32(d)) * fx.Int32(2)
+        # Build a vec<8, bf16> from the normalized fp32 values, then
+        # bitcast to vec<4, i32> for a single buffer_store_dwordx4.
+        bf16_vals = [arith.trunc_f(T.bf16, accs[d] * inv) for d in range(DIMS_PER_THREAD)]
+        bf16_v8 = vector.from_elements(T.vec(8, T.bf16), bf16_vals)
+        i32_v4 = vector.bitcast(T.vec(4, T.i32), bf16_v8)
+
+        # Skip store for invalid (padded) heads via scf.IfOp.
+        if_op = scf.IfOp(head_valid, results_=[], has_else=False)
+        with ir.InsertionPoint(if_op.then_block):
             buffer_ops.buffer_store(
-                i16_v, out_rsrc, byte_off, offset_is_bytes=True
+                i32_v4, out_rsrc, out_off // fx.Int32(2),
             )
+            scf.YieldOp([])
 
     @flyc.jit
     def launch_combine(
@@ -1036,12 +1080,15 @@ def _build_combine_kernel():
         actual_heads: fx.Int32,
         stream: fx.Stream = fx.Stream(None),
     ):
+        # Grid Y dim = ceil(actual_heads / HEADS_PER_BLOCK).  Use a host
+        # ceil-div constant so we don't need an in-kernel divrem.
+        head_blocks = (actual_heads + fx.Int32(HEADS_PER_BLOCK - 1)) // fx.Int32(HEADS_PER_BLOCK)
         combine_kernel(
             out_ptr, partial_o_ptr, partial_m_ptr, partial_l_ptr,
             actual_heads,
         ).launch(
-            grid=(bs, actual_heads),
-            block=(WARP_SIZE,),
+            grid=(bs, head_blocks),
+            block=(BLOCK_THREADS,),
             stream=stream,
         )
 
