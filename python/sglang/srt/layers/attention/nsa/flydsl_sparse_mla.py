@@ -184,6 +184,16 @@ SV_K_CHUNKS = BI // MFMA_K_FP8             # 2
 D_I32 = D // 4                             # 128
 D_ROPE_I32 = D_ROPE // 2                   # 32
 
+# Multi-CTA "split-K" along the topk axis.  Each CTA handles
+# CHUNKS_PER_PARTIAL = NI / NUM_PARTIALS chunks, then the combine kernel
+# reduces NUM_PARTIALS partials per (batch, head).
+# With NI=32 and NUM_PARTIALS=8, each CTA does 4 chunks and grid =
+# (batch, 8) which puts ``batch * 8`` CTAs in flight (vs 1 CTA in the
+# single-CTA design).  256 CUs means 8x parallelism with batch=4.
+NUM_PARTIALS = 8
+assert NI % NUM_PARTIALS == 0, "NI must be divisible by NUM_PARTIALS"
+CHUNKS_PER_PARTIAL = NI // NUM_PARTIALS    # 4
+
 _FP8_DTYPE = torch.float8_e4m3fn
 FP8_MAX = 448.0
 LOG2E = 1.4426950408889634
@@ -227,33 +237,49 @@ def _build_sparse_mla_kernel(sm_scale: float):
     sm_scale_log2e = float(sm_scale * LOG2E)
 
     @flyc.kernel
-    def fmha_kernel(
-        out_ptr: fx.Tensor,            # (BS, HG, D) bf16
+    def fmha_partial_kernel(
+        # Outputs ----------------------------------------------------------
+        partial_o_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG, D) fp32
+        partial_m_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
+        partial_l_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
+        # Q ---------------------------------------------------------------
         q_nope_ptr: fx.Tensor,         # (BS, HG, D) fp8
         q_rope_ptr: fx.Tensor,         # (BS, HG, D_ROPE) bf16
         q_scale_ptr: fx.Tensor,        # (BS, HG) fp32
+        # KV --------------------------------------------------------------
         k_nope_ptr: fx.Tensor,         # (T_POOL, D) fp8
         k_scale_ptr: fx.Tensor,        # (T_POOL,) fp32
         k_rope_ptr: fx.Tensor,         # (T_POOL, D_ROPE) bf16
+        # Indices ---------------------------------------------------------
         indices_ptr: fx.Tensor,        # (BS, TOPK) int32
     ):
         tid = gpu.thread_idx.x
         seq_idx = gpu.block_idx.x      # batch / decode-query index
+        partial_idx = gpu.block_idx.y  # which slice of the topk loop (0..NUM_PARTIALS)
         warp_id = tid // fx.Int32(WARP_SIZE)
         lane = tid % fx.Int32(WARP_SIZE)
         lane_hi4 = lane // fx.Int32(16)            # 0..3
         mfma_row = lane % fx.Int32(16)             # 0..15
 
         # Per-batch offsets (in **element** units; converted to byte offsets
-        # at the various buffer_load / buffer_store sites).  Each Q tensor
-        # has (BS, HG, ...); indices is (BS, TOPK); output is (BS, HG, D).
-        q_nope_batch_off = seq_idx * fx.Int32(HG * D)        # fp8 elements
-        q_rope_batch_off = seq_idx * fx.Int32(HG * D_ROPE)   # bf16 elements
-        q_scale_batch_off = seq_idx * fx.Int32(HG)           # fp32 elements
-        indices_batch_off = seq_idx * fx.Int32(TOPK)         # int32 elements
-        out_batch_off = seq_idx * fx.Int32(HG * D)           # bf16 elements
+        # at the various buffer_load / buffer_store sites).
+        q_nope_batch_off = seq_idx * fx.Int32(HG * D)
+        q_rope_batch_off = seq_idx * fx.Int32(HG * D_ROPE)
+        q_scale_batch_off = seq_idx * fx.Int32(HG)
+        indices_batch_off = seq_idx * fx.Int32(TOPK)
 
-        out_rsrc = buffer_ops.create_buffer_resource(out_ptr, max_size=True)
+        # Per-partial output offsets.  Layout: (BS, NUM_PARTIALS, HG, D).
+        # po[b, p, h, d] = po_base + (b*NUM_PARTIALS + p)*(HG*D) + h*D + d
+        partial_slot = seq_idx * fx.Int32(NUM_PARTIALS) + partial_idx
+        partial_o_off = partial_slot * fx.Int32(HG * D)        # fp32 elements
+        partial_ml_off = partial_slot * fx.Int32(HG)           # fp32 elements
+
+        # Where in the topk axis does THIS partial CTA start?
+        partial_chunk_start = partial_idx * fx.Int32(CHUNKS_PER_PARTIAL)
+
+        po_rsrc = buffer_ops.create_buffer_resource(partial_o_ptr, max_size=True)
+        pm_rsrc = buffer_ops.create_buffer_resource(partial_m_ptr, max_size=True)
+        pl_rsrc = buffer_ops.create_buffer_resource(partial_l_ptr, max_size=True)
         qn_rsrc = buffer_ops.create_buffer_resource(q_nope_ptr, max_size=True)
         qr_rsrc = buffer_ops.create_buffer_resource(q_rope_ptr, max_size=True)
         qs_rsrc = buffer_ops.create_buffer_resource(q_scale_ptr, max_size=True)
@@ -343,10 +369,14 @@ def _build_sparse_mla_kernel(sm_scale: float):
         acc_o = [arith.constant_vector(0.0, T.f32x4) for _ in range(SV_N_TILES_WARP)]
 
         # ================================================================
-        # Per-chunk loop
+        # Per-chunk loop -- only iterate over THIS partial CTA's slice of NI.
+        # Each partial covers CHUNKS_PER_PARTIAL contiguous chunks; combine
+        # kernel reduces NUM_PARTIALS partials per (batch, head) at the end.
         # ================================================================
-        for chunk_i in range_constexpr(NI):
-            chunk_off = fx.Int32(chunk_i * BI)
+        for local_chunk_i in range_constexpr(CHUNKS_PER_PARTIAL):
+            chunk_off = (
+                partial_chunk_start + fx.Int32(local_chunk_i)
+            ) * fx.Int32(BI)
 
             # --- STEP B1: gather K_nope_chunk -------------------------
             # Clamp src_row to >= 0 to avoid OOB reads from masked
@@ -684,42 +714,56 @@ def _build_sparse_mla_kernel(sm_scale: float):
             gpu.barrier()  # before next chunk overwrites K_nope_LDS
 
         # ================================================================
-        # Final normalize + bf16 store
+        # Emit partial outputs to global (for combine kernel to reduce).
+        # NO final divide / bf16 cast here -- combine sees raw fp32.
+        # Apply PROB_SCALE = 1/FP8_MAX once (compensates for the
+        # cvt_pk_fp8_f32 P-pack scale of FP8_MAX in STEP B11).
+        #
+        # Layouts:
+        #   partial_O : (BS, NUM_PARTIALS, HG, D)   fp32, written via buffer_store
+        #   partial_M : (BS, NUM_PARTIALS, HG)      fp32, running_max per row
+        #   partial_L : (BS, NUM_PARTIALS, HG)      fp32, running_sum per row
         # ================================================================
-        # acc_o[nt][r] /= running_sum[r], cast to bf16, write to O[row, col].
-        # Apply PROB_SCALE = 1/FP8_MAX (compensates for the cvt_pk_fp8_f32
-        # P-pack which scaled P by FP8_MAX in STEP B11).  Pa_decode_fp8.py
-        # does the same at line 487-489 (PROB_SCALE_C = 1/240).
-        # Single-bf16 buffer_store via scalar arith.bitcast(T.i16, bf16).
-        # 4 separate stores per lane per n_tile because MFMA Option-A
-        # output puts 4 elements at 4 NON-contiguous rows.
         PROB_SCALE = arith.constant(1.0 / FP8_MAX, type=T.f32)
         for nt in range_constexpr(SV_N_TILES_WARP):
-            n_tile_col = warp_id * fx.Int32(SV_N_PER_WARP) + fx.Int32(nt * 16) + mfma_row
+            n_tile_col = (
+                warp_id * fx.Int32(SV_N_PER_WARP)
+                + fx.Int32(nt * 16) + mfma_row
+            )
             acc_nt = acc_o[nt]
             for r in range_constexpr(4):
                 v = vector.extract(acc_nt, static_position=[r], dynamic_position=[])
-                rs = vector.extract(running_sum, static_position=[r], dynamic_position=[])
-                # E.bug.3 fix: arith.cmpf + arith.select (no ArithValue.cmp_eq).
-                cond_zero = arith.cmpf(arith.CmpFPredicate.OEQ, rs, ZERO_F)
-                safe = arith.select(cond_zero, ONE_F, rs)
-                normed = (v * PROB_SCALE) / safe
-                # E.bug.4 fix: fp32 -> bf16 -> i16 via scalar arith.bitcast.
-                bf16_v = arith.trunc_f(T.bf16, normed)
-                i16_v = arith.bitcast(T.i16, bf16_v)
                 row = lane_hi4 * fx.Int32(4) + fx.Int32(r)
-                # out_batch_off is in bf16 elements (2 bytes each).
-                byte_off = (
-                    (out_batch_off + row * fx.Int32(D) + n_tile_col)
-                    * fx.Int32(2)
+                # partial_o[batch, partial, row, n_tile_col] stride = HG * D
+                # fp32 = 4 bytes
+                elem_off = (
+                    partial_o_off + row * fx.Int32(D) + n_tile_col
                 )
                 buffer_ops.buffer_store(
-                    i16_v, out_rsrc, byte_off, offset_is_bytes=True
+                    v * PROB_SCALE, po_rsrc, elem_off,
                 )
+
+        # Write running_max / running_sum (per-row, per-partial).  All 16
+        # lanes of the same lane group hold the SAME 4 row-values (after
+        # the wave reductions), so the write race is benign.  We use 4
+        # stores per lane per output (HG*NUM_WARPS=64 writes per row, all
+        # storing the same value).
+        for r in range_constexpr(4):
+            row = lane_hi4 * fx.Int32(4) + fx.Int32(r)
+            m_v = vector.extract(running_max, static_position=[r], dynamic_position=[])
+            l_v = vector.extract(running_sum, static_position=[r], dynamic_position=[])
+            buffer_ops.buffer_store(
+                m_v, pm_rsrc, partial_ml_off + row,
+            )
+            buffer_ops.buffer_store(
+                l_v, pl_rsrc, partial_ml_off + row,
+            )
 
     @flyc.jit
     def launch_fn(
-        out_ptr: fx.Tensor,
+        partial_o_ptr: fx.Tensor,
+        partial_m_ptr: fx.Tensor,
+        partial_l_ptr: fx.Tensor,
         q_nope_ptr: fx.Tensor,
         q_rope_ptr: fx.Tensor,
         q_scale_ptr: fx.Tensor,
@@ -735,15 +779,127 @@ def _build_sparse_mla_kernel(sm_scale: float):
         with ir.InsertionPoint(ctx.gpu_module_body):
             allocator.finalize()
 
-        fmha_kernel(
-            out_ptr, q_nope_ptr, q_rope_ptr, q_scale_ptr,
+        fmha_partial_kernel(
+            partial_o_ptr, partial_m_ptr, partial_l_ptr,
+            q_nope_ptr, q_rope_ptr, q_scale_ptr,
             k_nope_ptr, k_scale_ptr, k_rope_ptr, indices_ptr,
         ).launch(
-            grid=(bs,), block=(BLOCK_THREADS,),
+            grid=(bs, fx.Int32(NUM_PARTIALS)),
+            block=(BLOCK_THREADS,),
             smem=SMEM_BYTES, stream=stream,
         )
 
     return launch_fn
+
+
+@functools.lru_cache(maxsize=4)
+def _build_combine_kernel():
+    """Reduce ``NUM_PARTIALS`` per-CTA partials into the final bf16 output.
+
+    Grid:  (BS, HG)   -- one CTA per (batch, head)
+    Block: 64 threads (one wave)
+
+    Each thread covers ``D / 64 = 8`` output dims.  It reads NUM_PARTIALS
+    ``(m, l, O[8 dims])`` triples, combines them via the standard flash
+    LSE-rescale, and writes the final bf16 output.
+    """
+    arch = _get_arch()
+    DIMS_PER_THREAD = D // WARP_SIZE   # 512 / 64 = 8
+
+    @flyc.kernel
+    def combine_kernel(
+        out_ptr: fx.Tensor,            # (BS, HG, D) bf16
+        partial_o_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG, D) fp32
+        partial_m_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
+        partial_l_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
+    ):
+        tid = gpu.thread_idx.x        # 0..63
+        seq_idx = gpu.block_idx.x
+        head_idx = gpu.block_idx.y
+
+        out_rsrc = buffer_ops.create_buffer_resource(out_ptr, max_size=True)
+        po_rsrc = buffer_ops.create_buffer_resource(partial_o_ptr, max_size=True)
+        pm_rsrc = buffer_ops.create_buffer_resource(partial_m_ptr, max_size=True)
+        pl_rsrc = buffer_ops.create_buffer_resource(partial_l_ptr, max_size=True)
+
+        # Element offsets.
+        po_seq_off = seq_idx * fx.Int32(NUM_PARTIALS * HG * D)
+        ml_seq_off = seq_idx * fx.Int32(NUM_PARTIALS * HG)
+        out_off = seq_idx * fx.Int32(HG * D) + head_idx * fx.Int32(D) + tid * fx.Int32(DIMS_PER_THREAD)
+
+        # Pass 1: load all NUM_PARTIALS (m, l) for this head; find global max.
+        # NUM_PARTIALS = 8; we hold them in registers per thread.
+        ms = []
+        ls = []
+        for p in range_constexpr(NUM_PARTIALS):
+            m_off = ml_seq_off + fx.Int32(p * HG) + head_idx
+            l_off = m_off
+            m_p = buffer_ops.buffer_load(pm_rsrc, m_off, vec_width=1, dtype=T.f32)
+            l_p = buffer_ops.buffer_load(pl_rsrc, l_off, vec_width=1, dtype=T.f32)
+            ms.append(m_p)
+            ls.append(l_p)
+
+        m_global = ms[0]
+        for p in range_constexpr(NUM_PARTIALS - 1):
+            m_global = m_global.maximumf(ms[p + 1])
+
+        # alpha[p] = exp(m_p - m_global); l_global = sum(alpha[p] * l_p).
+        alphas = []
+        l_global = fx.Float32(0.0)
+        for p in range_constexpr(NUM_PARTIALS):
+            a = (ms[p] - m_global).exp2(fastmath=arith.FastMathFlags.fast)
+            alphas.append(a)
+            l_global = l_global + a * ls[p]
+
+        # Pass 2: per thread, accumulate alpha[p] * partial_O[p, head, my-dims].
+        # Output: 8 fp32 values per thread, then divide by l_global, cast bf16.
+        accs = [fx.Float32(0.0) for _ in range(DIMS_PER_THREAD)]
+        for p in range_constexpr(NUM_PARTIALS):
+            base_p = (
+                po_seq_off + fx.Int32(p * HG * D)
+                + head_idx * fx.Int32(D) + tid * fx.Int32(DIMS_PER_THREAD)
+            )
+            for d in range_constexpr(DIMS_PER_THREAD):
+                v = buffer_ops.buffer_load(
+                    po_rsrc, base_p + fx.Int32(d),
+                    vec_width=1, dtype=T.f32,
+                )
+                accs[d] = accs[d] + alphas[p] * v
+
+        # Avoid divide-by-zero for fully-masked queries.
+        ZERO_F = fx.Float32(0.0)
+        ONE_F = fx.Float32(1.0)
+        cond = arith.cmpf(arith.CmpFPredicate.OEQ, l_global, ZERO_F)
+        safe = arith.select(cond, ONE_F, l_global)
+
+        # Cast and store.  8 contiguous bf16 = 16 bytes per thread.
+        for d in range_constexpr(DIMS_PER_THREAD):
+            normed = accs[d] / safe
+            bf16_v = arith.trunc_f(T.bf16, normed)
+            i16_v = arith.bitcast(T.i16, bf16_v)
+            byte_off = (out_off + fx.Int32(d)) * fx.Int32(2)
+            buffer_ops.buffer_store(
+                i16_v, out_rsrc, byte_off, offset_is_bytes=True
+            )
+
+    @flyc.jit
+    def launch_combine(
+        out_ptr: fx.Tensor,
+        partial_o_ptr: fx.Tensor,
+        partial_m_ptr: fx.Tensor,
+        partial_l_ptr: fx.Tensor,
+        bs: fx.Int32,
+        stream: fx.Stream = fx.Stream(None),
+    ):
+        combine_kernel(
+            out_ptr, partial_o_ptr, partial_m_ptr, partial_l_ptr,
+        ).launch(
+            grid=(bs, fx.Int32(HG)),
+            block=(WARP_SIZE,),
+            stream=stream,
+        )
+
+    return launch_combine
 
 
 def _quantize_to_fp8(x_bf16):
@@ -828,17 +984,36 @@ def flydsl_sparse_mla_decode_fused(
         indices = indices.squeeze(1)
     indices = indices.contiguous().to(torch.int32)
 
-    # --- Output ----------------------------------------------------------
+    # --- Allocate partial buffers + final output ------------------------
+    partial_o = torch.empty(
+        seq_len, NUM_PARTIALS, HG, D,
+        dtype=torch.float32, device=q.device,
+    )
+    partial_m = torch.empty(
+        seq_len, NUM_PARTIALS, HG,
+        dtype=torch.float32, device=q.device,
+    )
+    partial_l = torch.empty(
+        seq_len, NUM_PARTIALS, HG,
+        dtype=torch.float32, device=q.device,
+    )
     out = torch.empty(
-        seq_len, HG, D, dtype=torch.bfloat16, device=q.device
+        seq_len, HG, D, dtype=torch.bfloat16, device=q.device,
     )
 
-    # --- Build + launch (single launch over the whole batch) -----------
-    launch_fn = _build_sparse_mla_kernel(sm_scale)
-    launch_fn(
-        out, q_nope_fp8, q_rope, q_scale,
+    # --- Launch partial (multi-CTA: grid = (BS, NUM_PARTIALS)) ----------
+    launch_partial = _build_sparse_mla_kernel(sm_scale)
+    launch_partial(
+        partial_o, partial_m, partial_l,
+        q_nope_fp8, q_rope, q_scale,
         k_nope_fp8, k_scale, k_rope, indices,
         int(seq_len),
+    )
+
+    # --- Launch combine (grid = (BS, HG)) -------------------------------
+    launch_combine = _build_combine_kernel()
+    launch_combine(
+        out, partial_o, partial_m, partial_l, int(seq_len),
     )
 
     # Trim padded heads back
@@ -863,10 +1038,13 @@ def run_test():
     # Standalone test runs batch=1; reshape to (1, HG, ...) for the
     # batched kernel signature.
     out = torch.zeros(1, HG, D, dtype=torch.bfloat16, device="cuda")
+    partial_o = torch.empty(1, NUM_PARTIALS, HG, D, dtype=torch.float32, device="cuda")
+    partial_m = torch.empty(1, NUM_PARTIALS, HG, dtype=torch.float32, device="cuda")
+    partial_l = torch.empty(1, NUM_PARTIALS, HG, dtype=torch.float32, device="cuda")
     try:
-        launch_fn = _build_sparse_mla_kernel(sm_scale)
-        launch_fn(
-            out,
+        launch_partial = _build_sparse_mla_kernel(sm_scale)
+        launch_partial(
+            partial_o, partial_m, partial_l,
             q_nope_fp8.unsqueeze(0).contiguous(),
             q_rope_bf16.unsqueeze(0).contiguous(),
             q_scale.unsqueeze(0).contiguous(),
@@ -876,12 +1054,13 @@ def run_test():
             indices.unsqueeze(0).contiguous(),
             1,
         )
+        launch_combine = _build_combine_kernel()
+        launch_combine(out, partial_o, partial_m, partial_l, 1)
         torch.cuda.synchronize()
         out = out.squeeze(0)
     except Exception as e:
         print(f"[WIP] Step E full fmha kernel build/launch failed: "
               f"{type(e).__name__}: {e}")
-        print("See file docstring for the bug-list to fix (E.bug.1..6).")
         return float("inf")
 
     # Reference: compute full-precision sparse-MLA decode in fp32
