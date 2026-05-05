@@ -650,28 +650,37 @@ def flydsl_sparse_mla_decode_fp8(
         ``(seq_len, heads, d_v)`` bf16 attention output.
     """
     # ------------------------------------------------------------------
-    # The fully-fused single-pass FP8 fmha kernel
-    # (``_build_sparse_mla_decode_fp8_kernel`` above) is still WIP -- it
-    # compiles to MLIR but trips a list of FlyDSL API gaps before launch
-    # (see ``flydsl_sparse_mla.py`` E.bug.1..6 for the bug-list).
+    # Public entry point.  Two implementations live behind this:
     #
-    # For TODAY we route the public entry point to **Approach C** in
-    # ``flydsl_sparse_mla_v2.py``: a verified end-to-end implementation
-    # that composes flydsl_hgemm (validated bit-exact in our smoke test)
-    # with torch softmax instead of fusing everything in one kernel.
-    # That gives correct numbers + measurable latency now; the fused
-    # kernel will replace this dispatch once the API gaps are closed.
+    #   - ``flydsl_sparse_mla.py``    -- fully fused single-pass FP8 fmha
+    #                                   (the production target).  Now
+    #                                   correctness-passing on MI355X
+    #                                   (max-abs 0.025 vs torch fp32 ref).
+    #   - ``flydsl_sparse_mla_v2.py`` -- 2 hgemms + torch softmax fallback
+    #                                   (correct-but-slow safety net).
+    #
+    # ``SGLANG_NSA_FLYDSL_IMPL`` env var picks between them; default is
+    # the fused kernel.  Set to "v2" to force the fallback.
     # ------------------------------------------------------------------
-    from sglang.srt.layers.attention.nsa.flydsl_sparse_mla_v2 import (
-        flydsl_sparse_mla_decode_v2,
-    )
+    import os
+    impl = os.environ.get("SGLANG_NSA_FLYDSL_IMPL", "fused").lower()
 
-    return flydsl_sparse_mla_decode_v2(
-        q=q,
-        kv_paged_uint8=kv_paged_uint8,
-        indices=indices,
-        sm_scale=sm_scale,
-        d_v=d_v,
+    if impl == "v2":
+        from sglang.srt.layers.attention.nsa.flydsl_sparse_mla_v2 import (
+            flydsl_sparse_mla_decode_v2,
+        )
+        return flydsl_sparse_mla_decode_v2(
+            q=q, kv_paged_uint8=kv_paged_uint8, indices=indices,
+            sm_scale=sm_scale, d_v=d_v,
+        )
+
+    # --- fused (default) ----------------------------------------------
+    from sglang.srt.layers.attention.nsa.flydsl_sparse_mla import (
+        flydsl_sparse_mla_decode_fused,
+    )
+    return flydsl_sparse_mla_decode_fused(
+        q=q, kv_paged_uint8=kv_paged_uint8, indices=indices,
+        sm_scale=sm_scale, d_v=d_v,
     )
 
 

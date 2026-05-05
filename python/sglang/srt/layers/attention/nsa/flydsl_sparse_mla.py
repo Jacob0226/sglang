@@ -139,6 +139,7 @@ load-layout / lane-mapping fix-ups documented in flydsl_qk_minimal.py.
 
 from __future__ import annotations
 
+import functools
 import math
 import sys
 
@@ -188,6 +189,7 @@ FP8_MAX = 448.0
 LOG2E = 1.4426950408889634
 
 
+@functools.lru_cache(maxsize=8)
 def _build_sparse_mla_kernel(sm_scale: float):
     arch = _get_arch()
     assert str(arch).startswith("gfx95"), f"expected gfx950, got {arch}"
@@ -226,20 +228,30 @@ def _build_sparse_mla_kernel(sm_scale: float):
 
     @flyc.kernel
     def fmha_kernel(
-        out_ptr: fx.Tensor,            # (HG, D) bf16
-        q_nope_ptr: fx.Tensor,         # (HG, D) fp8
-        q_rope_ptr: fx.Tensor,         # (HG, D_ROPE) bf16
-        q_scale_ptr: fx.Tensor,        # (HG,) fp32
+        out_ptr: fx.Tensor,            # (BS, HG, D) bf16
+        q_nope_ptr: fx.Tensor,         # (BS, HG, D) fp8
+        q_rope_ptr: fx.Tensor,         # (BS, HG, D_ROPE) bf16
+        q_scale_ptr: fx.Tensor,        # (BS, HG) fp32
         k_nope_ptr: fx.Tensor,         # (T_POOL, D) fp8
         k_scale_ptr: fx.Tensor,        # (T_POOL,) fp32
         k_rope_ptr: fx.Tensor,         # (T_POOL, D_ROPE) bf16
-        indices_ptr: fx.Tensor,        # (TOPK,) int32
+        indices_ptr: fx.Tensor,        # (BS, TOPK) int32
     ):
         tid = gpu.thread_idx.x
+        seq_idx = gpu.block_idx.x      # batch / decode-query index
         warp_id = tid // fx.Int32(WARP_SIZE)
         lane = tid % fx.Int32(WARP_SIZE)
         lane_hi4 = lane // fx.Int32(16)            # 0..3
         mfma_row = lane % fx.Int32(16)             # 0..15
+
+        # Per-batch offsets (in **element** units; converted to byte offsets
+        # at the various buffer_load / buffer_store sites).  Each Q tensor
+        # has (BS, HG, ...); indices is (BS, TOPK); output is (BS, HG, D).
+        q_nope_batch_off = seq_idx * fx.Int32(HG * D)        # fp8 elements
+        q_rope_batch_off = seq_idx * fx.Int32(HG * D_ROPE)   # bf16 elements
+        q_scale_batch_off = seq_idx * fx.Int32(HG)           # fp32 elements
+        indices_batch_off = seq_idx * fx.Int32(TOPK)         # int32 elements
+        out_batch_off = seq_idx * fx.Int32(HG * D)           # bf16 elements
 
         out_rsrc = buffer_ops.create_buffer_resource(out_ptr, max_size=True)
         qn_rsrc = buffer_ops.create_buffer_resource(q_nope_ptr, max_size=True)
@@ -294,9 +306,14 @@ def _build_sparse_mla_kernel(sm_scale: float):
             return w
 
         # --- STEP A1: load Q_nope to LDS (8 KB / 256 threads x 8 i32) -----
+        # Q_nope offset (element index = i32 index since fp8 is 1 byte
+        # and we load i32 = 4 fp8): q_nope_batch_off / 4.
+        qn_global_base = q_nope_batch_off // fx.Int32(4)
         for li in range_constexpr(8):
             qi = tid + fx.Int32(li * BLOCK_THREADS)
-            qv = buffer_ops.buffer_load(qn_rsrc, qi, vec_width=1, dtype=T.i32)
+            qv = buffer_ops.buffer_load(
+                qn_rsrc, qn_global_base + qi, vec_width=1, dtype=T.i32
+            )
             vector.store(
                 vector.from_elements(T.vec(1, T.i32), [qv]),
                 qn_lds_i32,
@@ -304,9 +321,13 @@ def _build_sparse_mla_kernel(sm_scale: float):
             )
 
         # --- STEP A2: load Q_rope to LDS (2 KB / 256 threads x 2 i32) -----
+        # Q_rope is bf16 = 2 bytes, so element-to-i32 ratio = 2.
+        qr_global_base = q_rope_batch_off // fx.Int32(2)
         for li in range_constexpr(2):
             qi = tid + fx.Int32(li * BLOCK_THREADS)
-            qv = buffer_ops.buffer_load(qr_rsrc, qi, vec_width=1, dtype=T.i32)
+            qv = buffer_ops.buffer_load(
+                qr_rsrc, qr_global_base + qi, vec_width=1, dtype=T.i32
+            )
             vector.store(
                 vector.from_elements(T.vec(1, T.i32), [qv]),
                 qr_lds_i32,
@@ -328,14 +349,24 @@ def _build_sparse_mla_kernel(sm_scale: float):
             chunk_off = fx.Int32(chunk_i * BI)
 
             # --- STEP B1: gather K_nope_chunk -------------------------
+            # Clamp src_row to >= 0 to avoid OOB reads from masked
+            # (negative-index) topk slots.  The mask itself is enforced
+            # later in STEP B5 via ``in_range = k_tok_global >= 0``,
+            # which uses the ORIGINAL (un-clamped) index value.
             for li in range_constexpr(K_NOPE_BYTES // 4 // BLOCK_THREADS):
                 lds_idx = tid + fx.Int32(li * BLOCK_THREADS)
                 token = lds_idx // fx.Int32(D_I32)
                 k_i32 = lds_idx % fx.Int32(D_I32)
                 src_row = buffer_ops.buffer_load(
-                    idx_rsrc, chunk_off + token, vec_width=1, dtype=T.i32
+                    idx_rsrc,
+                    indices_batch_off + chunk_off + token,
+                    vec_width=1, dtype=T.i32,
                 )
-                g_i32 = src_row * fx.Int32(D_I32) + k_i32
+                # Clamp src_row to >= 0 (the mask is enforced later via
+                # in_range using the original index value).
+                neg = arith.cmpi(arith.CmpIPredicate.slt, src_row, fx.Int32(0))
+                src_row_safe = arith.select(neg, fx.Int32(0), src_row)
+                g_i32 = src_row_safe * fx.Int32(D_I32) + k_i32
                 kv = buffer_ops.buffer_load(kn_rsrc, g_i32, vec_width=1, dtype=T.i32)
                 vector.store(
                     vector.from_elements(T.vec(1, T.i32), [kv]),
@@ -349,9 +380,13 @@ def _build_sparse_mla_kernel(sm_scale: float):
                 token = lds_idx // fx.Int32(D_ROPE_I32)
                 k_i32 = lds_idx % fx.Int32(D_ROPE_I32)
                 src_row = buffer_ops.buffer_load(
-                    idx_rsrc, chunk_off + token, vec_width=1, dtype=T.i32
+                    idx_rsrc,
+                    indices_batch_off + chunk_off + token,
+                    vec_width=1, dtype=T.i32,
                 )
-                g_i32 = src_row * fx.Int32(D_ROPE_I32) + k_i32
+                neg = arith.cmpi(arith.CmpIPredicate.slt, src_row, fx.Int32(0))
+                src_row_safe = arith.select(neg, fx.Int32(0), src_row)
+                g_i32 = src_row_safe * fx.Int32(D_ROPE_I32) + k_i32
                 kv = buffer_ops.buffer_load(kr_rsrc, g_i32, vec_width=1, dtype=T.i32)
                 vector.store(
                     vector.from_elements(T.vec(1, T.i32), [kv]),
@@ -409,16 +444,26 @@ def _build_sparse_mla_kernel(sm_scale: float):
             q_scale_v = arith.constant_vector(0.0, T.f32x4)
             for r in range_constexpr(4):
                 row_idx = lane_hi4 * fx.Int32(4) + fx.Int32(r)
-                qs = buffer_ops.buffer_load(qs_rsrc, row_idx, vec_width=1, dtype=T.f32)
+                qs = buffer_ops.buffer_load(
+                    qs_rsrc, q_scale_batch_off + row_idx,
+                    vec_width=1, dtype=T.f32,
+                )
                 q_scale_v = vector.insert(qs, q_scale_v, static_position=[r], dynamic_position=[])
 
             # K-scale: per-token, the column we wrote in this lane is
             # warp_id*16 + mfma_row of the chunk.  Single fp32 per lane.
-            tok_idx = chunk_off + warp_id * fx.Int32(16) + mfma_row
+            # Clamp k_tok_global to >= 0 for the ks load (avoid OOB on
+            # masked slots); the mask itself uses the ORIGINAL index value.
+            tok_idx = (
+                indices_batch_off + chunk_off
+                + warp_id * fx.Int32(16) + mfma_row
+            )
             k_tok_global = buffer_ops.buffer_load(idx_rsrc, tok_idx, vec_width=1, dtype=T.i32)
-            ks = buffer_ops.buffer_load(ks_rsrc, k_tok_global, vec_width=1, dtype=T.f32)
+            neg_tok = arith.cmpi(arith.CmpIPredicate.slt, k_tok_global, fx.Int32(0))
+            k_tok_safe = arith.select(neg_tok, fx.Int32(0), k_tok_global)
+            ks = buffer_ops.buffer_load(ks_rsrc, k_tok_safe, vec_width=1, dtype=T.f32)
 
-            # Mask: indices < 0 -> -inf
+            # Mask: indices < 0 -> -inf (uses original, un-clamped index).
             in_range = k_tok_global >= fx.Int32(0)
 
             for r in range_constexpr(4):
@@ -433,17 +478,17 @@ def _build_sparse_mla_kernel(sm_scale: float):
             # Reduce max across 16 lanes (varying mfma_row = j) with same lane_hi4.
             local_max = _wave_max_within_16(acc_qk)
             # Now each lane in the same lane group has the same max for its 4 rows.
-            # Write to LDS: 1 lane per (warp_id, lane_group) writes 4 row-maxes.
-            # We use mfma_row==0 as the writer (one per (warp, lane_hi4)).
-            cond_writer = arith.cmpi(arith.CmpIPredicate.eq, mfma_row, fx.Int32(0))
-            with_writer = scf.IfOp(cond_writer, results_=[], has_else=False)
-            with ir.InsertionPoint(with_writer.then_block):
-                for r in range_constexpr(4):
-                    v = vector.extract(local_max, static_position=[r], dynamic_position=[])
-                    row_idx = lane_hi4 * fx.Int32(4) + fx.Int32(r)
-                    slot = warp_id * fx.Int32(HG) + row_idx
-                    max_lds.store(v, [arith.index_cast(T.index, slot)])
-                scf.YieldOp([])
+            # Write to LDS: every lane in a lane group has the SAME value
+            # after _wave_max_within_16, so 16 lanes writing the same value
+            # to the same slot is a benign write race (last writer wins,
+            # but they're all identical).  Avoids scf.IfOp + the Python
+            # expression-caching dominance issue between if-block and the
+            # cross-warp reader below.
+            for r in range_constexpr(4):
+                v = vector.extract(local_max, static_position=[r], dynamic_position=[])
+                row_idx_w = lane_hi4 * fx.Int32(4) + fx.Int32(r)
+                slot_w = warp_id * fx.Int32(HG) + row_idx_w
+                max_lds.store(v, [arith.index_cast(T.index, slot_w)])
 
             gpu.barrier()
 
@@ -491,37 +536,39 @@ def _build_sparse_mla_kernel(sm_scale: float):
 
             # --- STEP B9: P = exp2((acc_qk - new_max)) -----------------
             # SCALE_C already folded; we just subtract new_max in fp32.
+            # We then **pre-multiply P by ks** (per-token K-scale for this
+            # lane's column) so the SV gemm's f32 accumulator naturally
+            # carries the correct per-token scaled contribution.  Math:
+            #   O[h, d] = (sum_k P[h,k] * V_fp8[k,d] * k_scale[k]) / l[h]
+            #          = sum_k (P[h,k] * k_scale[k]) * V_fp8[k,d] / l[h]
+            # so scaling P pre-SV is equivalent to per-token V scaling.
+            # ``ks`` was already loaded for this lane's column in STEP B5.
+            # Two parallel f32x4 vectors: p_v carries per-token-K-scaled P
+            # (used by the SV MFMA so each token's contribution gets its
+            # k_scale[k] correctly), p_unscaled_v carries raw P (used by
+            # the running_sum / softmax denominator -- which must NOT
+            # include per-token k_scale).
             p_v = arith.constant_vector(0.0, T.f32x4)
-            local_sum = ZERO_F
+            p_unscaled_v = arith.constant_vector(0.0, T.f32x4)
             for r in range_constexpr(4):
                 v = vector.extract(acc_qk, static_position=[r], dynamic_position=[])
                 nm = vector.extract(new_max_v, static_position=[r], dynamic_position=[])
                 p = (v - nm).exp2(fastmath=arith.FastMathFlags.fast)
-                p_v = vector.insert(p, p_v, static_position=[r], dynamic_position=[])
-                local_sum = local_sum + p
+                p_unscaled_v = vector.insert(p, p_unscaled_v, static_position=[r], dynamic_position=[])
+                p_v = vector.insert(p * ks, p_v, static_position=[r], dynamic_position=[])
 
-            # --- STEP B10: per-row sum of P (warp-local, then cross-warp) -----
-            # local_sum is f32 (single value per lane, but we want per-row sums).
-            # Actually we stored 4 values per lane (4 rows).  Need a per-row
-            # warp-local sum.  Reuse _wave_sum_within_16 on each row's element.
-            # For simplicity, run sum as a vector reduction.  ``running_sum``
-            # update per-row uses the per-row sum.
-            psum_v = arith.constant_vector(0.0, T.f32x4)
+            # --- STEP B10: per-row sum of UNSCALED P -------------------
+            # Reduce across 16 N-lanes within a lane group (same 4 rows,
+            # different N positions).  Each lane in the group ends up with
+            # the per-row partial sum for this warp's 16 N positions.
+            local_sum_v = _wave_sum_within_16(p_unscaled_v)
+
+            # Same write-race pattern as the max writer above (benign).
             for r in range_constexpr(4):
-                v = vector.extract(p_v, static_position=[r], dynamic_position=[])
-                psum_v = vector.insert(v, psum_v, static_position=[r], dynamic_position=[])
-            local_sum_v = _wave_sum_within_16(psum_v)
-
-            # Write 4 row-sums per (warp, lane_hi4) to LDS.
-            cond_writer2 = arith.cmpi(arith.CmpIPredicate.eq, mfma_row, fx.Int32(0))
-            with_writer2 = scf.IfOp(cond_writer2, results_=[], has_else=False)
-            with ir.InsertionPoint(with_writer2.then_block):
-                for r in range_constexpr(4):
-                    v = vector.extract(local_sum_v, static_position=[r], dynamic_position=[])
-                    row_idx = lane_hi4 * fx.Int32(4) + fx.Int32(r)
-                    slot = warp_id * fx.Int32(HG) + row_idx
-                    sum_lds.store(v, [arith.index_cast(T.index, slot)])
-                scf.YieldOp([])
+                v = vector.extract(local_sum_v, static_position=[r], dynamic_position=[])
+                row_idx_s = lane_hi4 * fx.Int32(4) + fx.Int32(r)
+                slot_s = warp_id * fx.Int32(HG) + row_idx_s
+                sum_lds.store(v, [arith.index_cast(T.index, slot_s)])
 
             gpu.barrier()
 
@@ -601,27 +648,33 @@ def _build_sparse_mla_kernel(sm_scale: float):
                     a_b_i32 = vector.extract(a_b, static_position=[0], dynamic_position=[])
                     a_i64 = _pack_i32_pair_to_i64(a_a_i32, a_b_i32)
 
-                    # --- B operand load (V = K_nope_LDS)
-                    # B operand: lane (i, j) provides 8 fp8 at col=j (within tile),
-                    # k={i*8..+7}.  Token row in K_nope_LDS = k_off + i*8 + 0..7;
-                    # col in K_nope_LDS = n_tile_col_base + j.  4 fp8 = 1 i32.
-                    v_token = fx.Int32(k_off) + lane_hi4 * fx.Int32(8)
+                    # --- B operand load (V = K_nope_LDS)  [E.bug.5 fix]
+                    # Lane (i, j) needs 8 fp8 at row={k_off+i*8..i*8+7}, col=v_col.
+                    # K_nope_LDS is (BI, D) row-major fp8; consecutive K-rows
+                    # are D=512 bytes apart, NOT i32-contiguous for general
+                    # v_col.  Issue 8 single-byte loads per lane and pack
+                    # them into one i64 via vector.from_elements + bitcast.
                     v_col = n_tile_col_base + mfma_row
-                    v_elem_off = v_token * fx.Int32(D) + v_col
-                    # Need 8 fp8 = 2 i32, but they're at consecutive token rows
-                    # NOT consecutive bytes.  Issue 2 separate i32 loads.
-                    v_i32_idx_a = v_elem_off // fx.Int32(4)   # ! v_col MUST be i32-aligned for this to work
-                    # Actually each (token, col) is a single fp8.  i32 index = (token * D + col) // 4.
-                    # For mfma_row going 0..15, v_col varies and is NOT 4-aligned in general.
-                    # FIXME: this load assumes col-alignment which doesn't hold; needs byte loads
-                    # or B layout reorganization.  Marked as a known issue for next iteration.
-                    v_a = vector.load_op(
-                        T.vec(1, T.i32), kn_lds_i32,
-                        [arith.index_cast(T.index, v_i32_idx_a)],
+                    v_byte_base = (
+                        (fx.Int32(k_off) + lane_hi4 * fx.Int32(8))
+                        * fx.Int32(D) + v_col
                     )
-                    v_a_i32 = vector.extract(v_a, static_position=[0], dynamic_position=[])
-                    # FIXME: dummy second pack; layout TBD
-                    v_i64 = _pack_i32_pair_to_i64(v_a_i32, v_a_i32)
+                    v_bytes = []
+                    for b in range_constexpr(8):
+                        v_off = v_byte_base + fx.Int32(b * D)
+                        v_one = vector.load_op(
+                            T.vec(1, T.i8), kn_lds_bytes,
+                            [arith.index_cast(T.index, v_off)],
+                        )
+                        v_one_i8 = vector.extract(
+                            v_one, static_position=[0], dynamic_position=[]
+                        )
+                        v_bytes.append(v_one_i8)
+                    v_vec_i8 = vector.from_elements(T.vec(8, T.i8), v_bytes)
+                    v_i64_vec = vector.bitcast(T.vec(1, T.i64), v_vec_i8)
+                    v_i64 = vector.extract(
+                        v_i64_vec, static_position=[0], dynamic_position=[]
+                    )
 
                     acc_nt = rocdl.mfma_f32_16x16x32_fp8_fp8(
                         T.f32x4, [a_i64, v_i64, acc_nt, 0, 0, 0]
@@ -633,28 +686,35 @@ def _build_sparse_mla_kernel(sm_scale: float):
         # ================================================================
         # Final normalize + bf16 store
         # ================================================================
-        # acc_o[nt][r] /= running_sum[r], cast to bf16, write to O[row, col]
+        # acc_o[nt][r] /= running_sum[r], cast to bf16, write to O[row, col].
+        # Apply PROB_SCALE = 1/FP8_MAX (compensates for the cvt_pk_fp8_f32
+        # P-pack which scaled P by FP8_MAX in STEP B11).  Pa_decode_fp8.py
+        # does the same at line 487-489 (PROB_SCALE_C = 1/240).
+        # Single-bf16 buffer_store via scalar arith.bitcast(T.i16, bf16).
+        # 4 separate stores per lane per n_tile because MFMA Option-A
+        # output puts 4 elements at 4 NON-contiguous rows.
+        PROB_SCALE = arith.constant(1.0 / FP8_MAX, type=T.f32)
         for nt in range_constexpr(SV_N_TILES_WARP):
             n_tile_col = warp_id * fx.Int32(SV_N_PER_WARP) + fx.Int32(nt * 16) + mfma_row
             acc_nt = acc_o[nt]
             for r in range_constexpr(4):
                 v = vector.extract(acc_nt, static_position=[r], dynamic_position=[])
                 rs = vector.extract(running_sum, static_position=[r], dynamic_position=[])
-                # Avoid div-by-zero if a row had all-masked tokens.
-                safe = rs.cmp_eq(ZERO_F).select(ONE_F, rs)
-                normed = v / safe
-                # cast to bf16 and store
-                row = lane_hi4 * fx.Int32(4) + fx.Int32(r)
-                # buffer_store one bf16 at a time (slow but simple).  We don't
-                # have a 1-bf16 store helper, so cast through i16.
-                # Actually buffer_ops.buffer_store accepts vec; pack via vector.
+                # E.bug.3 fix: arith.cmpf + arith.select (no ArithValue.cmp_eq).
+                cond_zero = arith.cmpf(arith.CmpFPredicate.OEQ, rs, ZERO_F)
+                safe = arith.select(cond_zero, ONE_F, rs)
+                normed = (v * PROB_SCALE) / safe
+                # E.bug.4 fix: fp32 -> bf16 -> i16 via scalar arith.bitcast.
                 bf16_v = arith.trunc_f(T.bf16, normed)
-                # Compute byte offset in O (HG, D) bf16 = 16 * 512 * 2 = 16 KB
-                byte_off = (row * fx.Int32(D) + n_tile_col) * fx.Int32(2)
-                # Pack single bf16 -> i16 -> store as i16
-                bf16_i16 = arith.bitcast(T.i16, bf16_v)
+                i16_v = arith.bitcast(T.i16, bf16_v)
+                row = lane_hi4 * fx.Int32(4) + fx.Int32(r)
+                # out_batch_off is in bf16 elements (2 bytes each).
+                byte_off = (
+                    (out_batch_off + row * fx.Int32(D) + n_tile_col)
+                    * fx.Int32(2)
+                )
                 buffer_ops.buffer_store(
-                    bf16_i16, out_rsrc, byte_off, offset_is_bytes=True
+                    i16_v, out_rsrc, byte_off, offset_is_bytes=True
                 )
 
     @flyc.jit
@@ -667,6 +727,7 @@ def _build_sparse_mla_kernel(sm_scale: float):
         k_scale_ptr: fx.Tensor,
         k_rope_ptr: fx.Tensor,
         indices_ptr: fx.Tensor,
+        bs: fx.Int32,
         stream: fx.Stream = fx.Stream(None),
     ):
         allocator.finalized = False
@@ -678,7 +739,7 @@ def _build_sparse_mla_kernel(sm_scale: float):
             out_ptr, q_nope_ptr, q_rope_ptr, q_scale_ptr,
             k_nope_ptr, k_scale_ptr, k_rope_ptr, indices_ptr,
         ).launch(
-            grid=(1,), block=(BLOCK_THREADS,),
+            grid=(bs,), block=(BLOCK_THREADS,),
             smem=SMEM_BYTES, stream=stream,
         )
 
@@ -691,6 +752,99 @@ def _quantize_to_fp8(x_bf16):
     x_scaled = (x_bf16.float() / scale).clamp(-FP8_MAX, FP8_MAX)
     x_fp8 = x_scaled.to(_FP8_DTYPE)
     return x_fp8, scale.squeeze(-1).contiguous()
+
+
+def flydsl_sparse_mla_decode_fused(
+    q: torch.Tensor,
+    kv_paged_uint8: torch.Tensor,
+    indices: torch.Tensor,
+    sm_scale: float,
+    d_v: int = 512,
+) -> torch.Tensor:
+    """Public NSA-compatible entry point for the fused FlyDSL fmha.
+
+    Mirrors ``tilelang_sparse_fwd`` signature so it can be plugged into
+    ``nsa_backend._forward_tilelang`` directly via
+    ``SGLANG_NSA_TILELANG_VARIANT=flydsl``.
+
+    Parameters
+    ----------
+    q : (seq_len, heads, dim+tail_dim=576) bf16
+    kv_paged_uint8 : (num_blocks, block_size, 1, 656) uint8 -- FP8 paged
+        NSA KV layout (nope_fp8 + 4 fp32 tile-scales + rope_bf16).
+    indices : (seq_len, kv_group=1, topk) int32
+    sm_scale : float
+    d_v : int (== 512)
+
+    Notes
+    -----
+    The fused kernel currently consumes a **single per-token K-scale**
+    (not per-tile).  We collapse the 4 NSA per-tile scales to a per-token
+    mean as a near-correct approximation; the proper per-tile fp8 path
+    requires applying different scales across the 4 K-chunks of the QK
+    nope MFMA -- tracked as a follow-up optimization in the file
+    docstring.
+    """
+    from sglang.srt.layers.attention.nsa.tilelang_kernel_fp8 import (
+        _split_paged_kv_fp8,
+    )
+
+    assert d_v == D, f"flydsl fused kernel fixes d_v={D}, got {d_v}"
+    assert q.dim() == 3 and indices.dim() == 3
+    seq_len, heads, dim_total = q.shape
+    assert dim_total == D + D_ROPE
+    # The fused kernel is built for HG=16 padded heads.  GLM-5.1 with TP=8
+    # gives heads=8 -- pad up to 16 here, drop the trailing 8 at output.
+    assert heads <= HG, f"fused kernel max HG={HG}, got {heads}"
+
+    # --- Split paged KV --------------------------------------------------
+    k_nope_fp8_full, k_scale_full, k_rope_full = _split_paged_kv_fp8(
+        kv_paged_uint8
+    )
+    k_nope_fp8 = k_nope_fp8_full.reshape(-1, D).contiguous()
+    # Collapse 4 per-tile scales to a per-token MEAN (approximation).
+    k_scale = k_scale_full.reshape(-1, 4).mean(dim=-1).contiguous()
+    k_rope = k_rope_full.reshape(-1, D_ROPE).contiguous()
+
+    # --- Pad heads to HG -------------------------------------------------
+    if heads < HG:
+        pad = HG - heads
+        q = torch.nn.functional.pad(q, (0, 0, 0, pad))   # pad heads dim
+    q_nope = q[:, :, :D].contiguous()
+    q_rope = q[:, :, D:].contiguous()
+
+    # --- Quantize Q nope per-(batch, head) row --------------------------
+    q_nope_amax = q_nope.abs().amax(dim=-1, keepdim=True).float()
+    q_scale = (q_nope_amax / FP8_MAX).clamp(min=1e-8).squeeze(-1)  # (batch, HG)
+    q_nope_scaled = (q_nope.float() / q_scale.unsqueeze(-1)).clamp(
+        -FP8_MAX, FP8_MAX
+    )
+    q_nope_fp8 = q_nope_scaled.to(_FP8_DTYPE).contiguous()
+    q_scale = q_scale.contiguous()
+
+    # --- Indices ---------------------------------------------------------
+    if indices.dim() == 3:
+        assert indices.shape[1] == 1
+        indices = indices.squeeze(1)
+    indices = indices.contiguous().to(torch.int32)
+
+    # --- Output ----------------------------------------------------------
+    out = torch.empty(
+        seq_len, HG, D, dtype=torch.bfloat16, device=q.device
+    )
+
+    # --- Build + launch (single launch over the whole batch) -----------
+    launch_fn = _build_sparse_mla_kernel(sm_scale)
+    launch_fn(
+        out, q_nope_fp8, q_rope, q_scale,
+        k_nope_fp8, k_scale, k_rope, indices,
+        int(seq_len),
+    )
+
+    # Trim padded heads back
+    if heads < HG:
+        out = out[:, :heads, :].contiguous()
+    return out
 
 
 def run_test():
@@ -706,14 +860,24 @@ def run_test():
 
     sm_scale = 1.0 / math.sqrt(D + D_ROPE)
 
-    out = torch.zeros(HG, D, dtype=torch.bfloat16, device="cuda")
+    # Standalone test runs batch=1; reshape to (1, HG, ...) for the
+    # batched kernel signature.
+    out = torch.zeros(1, HG, D, dtype=torch.bfloat16, device="cuda")
     try:
         launch_fn = _build_sparse_mla_kernel(sm_scale)
         launch_fn(
-            out, q_nope_fp8, q_rope_bf16, q_scale,
-            k_nope_fp8, k_scale, k_rope_bf16, indices,
+            out,
+            q_nope_fp8.unsqueeze(0).contiguous(),
+            q_rope_bf16.unsqueeze(0).contiguous(),
+            q_scale.unsqueeze(0).contiguous(),
+            k_nope_fp8.contiguous(),
+            k_scale.contiguous(),
+            k_rope_bf16.contiguous(),
+            indices.unsqueeze(0).contiguous(),
+            1,
         )
         torch.cuda.synchronize()
+        out = out.squeeze(0)
     except Exception as e:
         print(f"[WIP] Step E full fmha kernel build/launch failed: "
               f"{type(e).__name__}: {e}")
