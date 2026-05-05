@@ -199,6 +199,13 @@ _FP8_DTYPE = torch.float8_e4m3fn
 FP8_MAX = 448.0
 LOG2E = 1.4426950408889634
 
+# 656-byte NSA paged KV layout (matches nsa.quant_k_cache).
+KV_BYTES_PER_TOKEN = 656
+KV_I32_PER_TOKEN = KV_BYTES_PER_TOKEN // 4   # 164
+KV_NOPE_I32_OFFSET = 0                        # bytes [  0..511]  fp8 nope (128 i32)
+KV_SCALE_I32_OFFSET = D // 4                  # bytes [512..527]  fp32 scales x 4 (4 i32) -- 128
+KV_ROPE_I32_OFFSET = (D + 4 * 4) // 4         # bytes [528..655]  bf16 rope (32 i32) -- 132
+
 
 @functools.lru_cache(maxsize=8)
 def _build_sparse_mla_kernel(sm_scale: float):
@@ -252,13 +259,10 @@ def _build_sparse_mla_kernel(sm_scale: float):
         partial_o_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG, D) fp32
         partial_m_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
         partial_l_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
-        # Q (bf16, in-kernel quantize to fp8) -----------------------------
-        q_nope_bf16_ptr: fx.Tensor,    # (BS, HG, D) bf16
-        q_rope_ptr: fx.Tensor,         # (BS, HG, D_ROPE) bf16
-        # KV --------------------------------------------------------------
-        k_nope_ptr: fx.Tensor,         # (T_POOL, D) fp8
-        k_scale_ptr: fx.Tensor,        # (T_POOL,) fp32
-        k_rope_ptr: fx.Tensor,         # (T_POOL, D_ROPE) bf16
+        # Q (bf16; single tensor, kernel reads nope/rope by byte offset) -
+        q_ptr: fx.Tensor,              # (BS, HG, D + D_ROPE) bf16
+        # KV (single 656-byte paged buffer, kernel reads directly) -------
+        kv_paged_ptr: fx.Tensor,       # (T_POOL, 656) uint8 viewed as i32
         # Indices ---------------------------------------------------------
         indices_ptr: fx.Tensor,        # (BS, TOPK) int32
     ):
@@ -270,10 +274,10 @@ def _build_sparse_mla_kernel(sm_scale: float):
         lane_hi4 = lane // fx.Int32(16)            # 0..3
         mfma_row = lane % fx.Int32(16)             # 0..15
 
-        # Per-batch offsets (in **element** units).  Q nope is bf16 now
-        # (was fp8); bf16 = 2 bytes so element_index = i32_index * 2.
-        q_nope_bf16_batch_off = seq_idx * fx.Int32(HG * D)   # bf16 elements
-        q_rope_batch_off = seq_idx * fx.Int32(HG * D_ROPE)
+        # Per-batch offsets (in **element** units).  Single Q tensor with
+        # row stride = (D + D_ROPE) bf16 elements per head.
+        q_dim_total = D + D_ROPE
+        q_batch_off = seq_idx * fx.Int32(HG * q_dim_total)   # bf16 elements
         indices_batch_off = seq_idx * fx.Int32(TOPK)
 
         # Per-partial output offsets.  Layout: (BS, NUM_PARTIALS, HG, D).
@@ -288,11 +292,11 @@ def _build_sparse_mla_kernel(sm_scale: float):
         po_rsrc = buffer_ops.create_buffer_resource(partial_o_ptr, max_size=True)
         pm_rsrc = buffer_ops.create_buffer_resource(partial_m_ptr, max_size=True)
         pl_rsrc = buffer_ops.create_buffer_resource(partial_l_ptr, max_size=True)
-        qn_bf16_rsrc = buffer_ops.create_buffer_resource(q_nope_bf16_ptr, max_size=True)
-        qr_rsrc = buffer_ops.create_buffer_resource(q_rope_ptr, max_size=True)
-        kn_rsrc = buffer_ops.create_buffer_resource(k_nope_ptr, max_size=True)
-        ks_rsrc = buffer_ops.create_buffer_resource(k_scale_ptr, max_size=True)
-        kr_rsrc = buffer_ops.create_buffer_resource(k_rope_ptr, max_size=True)
+        # Single Q resource; nope at byte offset 0 of each row, rope at
+        # byte offset D*2.  Per-row bf16 stride = (D + D_ROPE) * 2 bytes.
+        q_rsrc = buffer_ops.create_buffer_resource(q_ptr, max_size=True)
+        # Single resource for the entire 656 B/token paged KV buffer.
+        kv_rsrc = buffer_ops.create_buffer_resource(kv_paged_ptr, max_size=True)
         idx_rsrc = buffer_ops.create_buffer_resource(indices_ptr, max_size=True)
 
         base = allocator.get_base()
@@ -349,34 +353,67 @@ def _build_sparse_mla_kernel(sm_scale: float):
                 w = w + peer
             return w
 
-        # --- STEP A1: load Q_nope (bf16) to LDS -----------------------
-        # Q_nope_bf16: HG*D = 16*512 = 8192 bf16 = 4096 i32; 256 threads
-        # x 16 i32 each.  Loaded into the transient bf16 staging region.
-        qn_bf16_global_base = q_nope_bf16_batch_off // fx.Int32(2)  # i32 idx
-        for li in range_constexpr(Q_NOPE_BF16_BYTES // 4 // BLOCK_THREADS):
-            qi = tid + fx.Int32(li * BLOCK_THREADS)
-            qv = buffer_ops.buffer_load(
-                qn_bf16_rsrc, qn_bf16_global_base + qi,
-                vec_width=1, dtype=T.i32,
+        # --- STEP A1: load Q (bf16) to two LDS regions ----------------
+        # Q layout: (BS, HG, D + D_ROPE) bf16.  Per-row stride = 1152 B.
+        # 256 threads cooperatively load all HG rows.
+        # We split nope/rope at LDS-write time to keep downstream kernel
+        # logic identical to the previous separate-nope/separate-rope
+        # design.  Avoids host-side ``q[:, :, :D].contiguous()`` copies.
+        # Each thread handles one (head, dim_chunk_of_8_bf16) pair.
+        # head_idx = tid // (q_dim_total / 8) ;
+        # dim_off  = (tid % (q_dim_total / 8)) * 8 (bf16 elements)
+        # Total per CTA: HG * (D + D_ROPE) / 8 = 16 * 144 = 2304 vec8 loads.
+        # 256 threads x 9 loads each.
+        DIM_CHUNKS_PER_HEAD = (D + D_ROPE) // 8   # 144 -- 8 bf16 per chunk
+        TOTAL_CHUNKS = HG * DIM_CHUNKS_PER_HEAD   # 2304
+        for li in range_constexpr((TOTAL_CHUNKS + BLOCK_THREADS - 1) // BLOCK_THREADS):
+            chunk_id = tid + fx.Int32(li * BLOCK_THREADS)
+            head_idx_load = chunk_id // fx.Int32(DIM_CHUNKS_PER_HEAD)
+            dim_chunk = chunk_id % fx.Int32(DIM_CHUNKS_PER_HEAD)
+            dim_off_bf16 = dim_chunk * fx.Int32(8)  # 0..1144 step 8
+            elem_off = (
+                q_batch_off
+                + head_idx_load * fx.Int32(q_dim_total)
+                + dim_off_bf16
             )
-            vector.store(
-                vector.from_elements(T.vec(1, T.i32), [qv]),
-                qn_bf16_lds_i32,
-                [arith.index_cast(T.index, qi)],
+            # Load 8 bf16 = 4 i32 = 16 bytes (one buffer_load_dwordx4).
+            qv4 = buffer_ops.buffer_load(
+                q_rsrc, elem_off // fx.Int32(2),  # i32 index
+                vec_width=4, dtype=T.i32,
             )
-
-        # --- STEP A2: load Q_rope to LDS (2 KB / 256 threads x 2 i32) -----
-        qr_global_base = q_rope_batch_off // fx.Int32(2)
-        for li in range_constexpr(2):
-            qi = tid + fx.Int32(li * BLOCK_THREADS)
-            qv = buffer_ops.buffer_load(
-                qr_rsrc, qr_global_base + qi, vec_width=1, dtype=T.i32
+            # Decide nope vs rope based on dim_off_bf16:
+            #   dim_off in [0, D)        -> nope LDS at row=h, col=dim_off
+            #   dim_off in [D, D+D_ROPE) -> rope LDS at row=h, col=dim_off-D
+            cond_is_nope = arith.cmpi(
+                arith.CmpIPredicate.slt, dim_off_bf16, fx.Int32(D)
             )
-            vector.store(
-                vector.from_elements(T.vec(1, T.i32), [qv]),
-                qr_lds_i32,
-                [arith.index_cast(T.index, qi)],
-            )
+            # Compute LDS i32 offsets for both potential destinations.
+            # We always store to BOTH (the wrong one is benign since the
+            # if-then path below selects the right pointer); cheaper than
+            # branching on every chunk.
+            nope_off_i32 = (
+                head_idx_load * fx.Int32(D) + dim_off_bf16
+            ) // fx.Int32(2)  # bf16 -> i32 idx (4 bf16 per i32)
+            rope_off_i32 = (
+                head_idx_load * fx.Int32(D_ROPE)
+                + (dim_off_bf16 - fx.Int32(D))
+            ) // fx.Int32(2)
+            # We need a conditional store so we don't write rope-region
+            # offsets to the nope LDS or vice versa.  scf.IfOp on the
+            # boolean ``cond_is_nope``.
+            if_op = scf.IfOp(cond_is_nope, results_=[], has_else=True)
+            with ir.InsertionPoint(if_op.then_block):
+                vector.store(
+                    qv4, qn_bf16_lds_i32,
+                    [arith.index_cast(T.index, nope_off_i32)],
+                )
+                scf.YieldOp([])
+            with ir.InsertionPoint(if_op.else_block):
+                vector.store(
+                    qv4, qr_lds_i32,
+                    [arith.index_cast(T.index, rope_off_i32)],
+                )
+                scf.YieldOp([])
 
         gpu.barrier()  # Q_NOPE_BF16 must be fully resident before quant.
 
@@ -487,11 +524,10 @@ def _build_sparse_mla_kernel(sm_scale: float):
                 partial_chunk_start + fx.Int32(local_chunk_i)
             ) * fx.Int32(BI)
 
-            # --- STEP B1: gather K_nope_chunk -------------------------
-            # Clamp src_row to >= 0 to avoid OOB reads from masked
-            # (negative-index) topk slots.  The mask itself is enforced
-            # later in STEP B5 via ``in_range = k_tok_global >= 0``,
-            # which uses the ORIGINAL (un-clamped) index value.
+            # --- STEP B1: gather K_nope_chunk (direct paged read) -----
+            # Read directly from the 656-byte paged KV buffer at byte
+            # offset ``src_row * 656 + 0..511``.  i32 stride = 164.
+            # Eliminates the host-side ``.contiguous()`` copy (~15 us).
             for li in range_constexpr(K_NOPE_BYTES // 4 // BLOCK_THREADS):
                 lds_idx = tid + fx.Int32(li * BLOCK_THREADS)
                 token = lds_idx // fx.Int32(D_I32)
@@ -501,19 +537,24 @@ def _build_sparse_mla_kernel(sm_scale: float):
                     indices_batch_off + chunk_off + token,
                     vec_width=1, dtype=T.i32,
                 )
-                # Clamp src_row to >= 0 (the mask is enforced later via
-                # in_range using the original index value).
                 neg = arith.cmpi(arith.CmpIPredicate.slt, src_row, fx.Int32(0))
                 src_row_safe = arith.select(neg, fx.Int32(0), src_row)
-                g_i32 = src_row_safe * fx.Int32(D_I32) + k_i32
-                kv = buffer_ops.buffer_load(kn_rsrc, g_i32, vec_width=1, dtype=T.i32)
+                # nope at i32 offset (src_row * 164) + k_i32
+                g_i32 = (
+                    src_row_safe * fx.Int32(KV_I32_PER_TOKEN)
+                    + fx.Int32(KV_NOPE_I32_OFFSET) + k_i32
+                )
+                kv = buffer_ops.buffer_load(kv_rsrc, g_i32, vec_width=1, dtype=T.i32)
                 vector.store(
                     vector.from_elements(T.vec(1, T.i32), [kv]),
                     kn_lds_i32,
                     [arith.index_cast(T.index, lds_idx)],
                 )
 
-            # --- STEP B2: gather K_rope_chunk -------------------------
+            # --- STEP B2: gather K_rope_chunk (direct paged read) -----
+            # Rope at byte offset ``src_row * 656 + 528``; i32 row stride
+            # = 164, rope starts at i32 offset 132.  Eliminates the
+            # host-side rope ``.contiguous()`` copy (~10 us).
             for li in range_constexpr(K_ROPE_BYTES // 4 // BLOCK_THREADS):
                 lds_idx = tid + fx.Int32(li * BLOCK_THREADS)
                 token = lds_idx // fx.Int32(D_ROPE_I32)
@@ -525,8 +566,11 @@ def _build_sparse_mla_kernel(sm_scale: float):
                 )
                 neg = arith.cmpi(arith.CmpIPredicate.slt, src_row, fx.Int32(0))
                 src_row_safe = arith.select(neg, fx.Int32(0), src_row)
-                g_i32 = src_row_safe * fx.Int32(D_ROPE_I32) + k_i32
-                kv = buffer_ops.buffer_load(kr_rsrc, g_i32, vec_width=1, dtype=T.i32)
+                g_i32 = (
+                    src_row_safe * fx.Int32(KV_I32_PER_TOKEN)
+                    + fx.Int32(KV_ROPE_I32_OFFSET) + k_i32
+                )
+                kv = buffer_ops.buffer_load(kv_rsrc, g_i32, vec_width=1, dtype=T.i32)
                 vector.store(
                     vector.from_elements(T.vec(1, T.i32), [kv]),
                     kr_lds_i32,
@@ -589,10 +633,10 @@ def _build_sparse_mla_kernel(sm_scale: float):
                 )
                 q_scale_v = vector.insert(qs, q_scale_v, static_position=[r], dynamic_position=[])
 
-            # K-scale: per-token, the column we wrote in this lane is
-            # warp_id*16 + mfma_row of the chunk.  Single fp32 per lane.
-            # Clamp k_tok_global to >= 0 for the ks load (avoid OOB on
-            # masked slots); the mask itself uses the ORIGINAL index value.
+            # K-scale: per-token, 4 fp32 per-tile scales stored at byte
+            # offset ``src_row*656 + 512``.  We read all 4 and use their
+            # mean for now (matches host-side behavior); a future change
+            # will apply per-tile scales individually during QK MFMA.
             tok_idx = (
                 indices_batch_off + chunk_off
                 + warp_id * fx.Int32(16) + mfma_row
@@ -600,7 +644,19 @@ def _build_sparse_mla_kernel(sm_scale: float):
             k_tok_global = buffer_ops.buffer_load(idx_rsrc, tok_idx, vec_width=1, dtype=T.i32)
             neg_tok = arith.cmpi(arith.CmpIPredicate.slt, k_tok_global, fx.Int32(0))
             k_tok_safe = arith.select(neg_tok, fx.Int32(0), k_tok_global)
-            ks = buffer_ops.buffer_load(ks_rsrc, k_tok_safe, vec_width=1, dtype=T.f32)
+            ks_row_base = (
+                k_tok_safe * fx.Int32(KV_I32_PER_TOKEN)
+                + fx.Int32(KV_SCALE_I32_OFFSET)
+            )
+            ks_sum = fx.Float32(0.0)
+            for ti in range_constexpr(4):
+                kst = buffer_ops.buffer_load(
+                    kv_rsrc, ks_row_base + fx.Int32(ti),
+                    vec_width=1, dtype=T.f32,
+                )
+                ks_sum = ks_sum + kst
+            QUARTER = arith.constant(0.25, type=T.f32)
+            ks = ks_sum * QUARTER
 
             # Mask: indices < 0 -> -inf (uses original, un-clamped index).
             in_range = k_tok_global >= fx.Int32(0)
@@ -873,11 +929,8 @@ def _build_sparse_mla_kernel(sm_scale: float):
         partial_o_ptr: fx.Tensor,
         partial_m_ptr: fx.Tensor,
         partial_l_ptr: fx.Tensor,
-        q_nope_bf16_ptr: fx.Tensor,
-        q_rope_ptr: fx.Tensor,
-        k_nope_ptr: fx.Tensor,
-        k_scale_ptr: fx.Tensor,
-        k_rope_ptr: fx.Tensor,
+        q_ptr: fx.Tensor,
+        kv_paged_ptr: fx.Tensor,
         indices_ptr: fx.Tensor,
         bs: fx.Int32,
         stream: fx.Stream = fx.Stream(None),
@@ -889,8 +942,7 @@ def _build_sparse_mla_kernel(sm_scale: float):
 
         fmha_partial_kernel(
             partial_o_ptr, partial_m_ptr, partial_l_ptr,
-            q_nope_bf16_ptr, q_rope_ptr,
-            k_nope_ptr, k_scale_ptr, k_rope_ptr, indices_ptr,
+            q_ptr, kv_paged_ptr, indices_ptr,
         ).launch(
             grid=(bs, fx.Int32(NUM_PARTIALS)),
             block=(BLOCK_THREADS,),
@@ -1049,35 +1101,32 @@ def flydsl_sparse_mla_decode_fused(
     nope MFMA -- tracked as a follow-up optimization in the file
     docstring.
     """
-    from sglang.srt.layers.attention.nsa.tilelang_kernel_fp8 import (
-        _split_paged_kv_fp8,
-    )
-
     assert d_v == D, f"flydsl fused kernel fixes d_v={D}, got {d_v}"
     assert q.dim() == 3 and indices.dim() == 3
     seq_len, heads, dim_total = q.shape
     assert dim_total == D + D_ROPE
-    # The fused kernel is built for HG=16 padded heads.  GLM-5.1 with TP=8
-    # gives heads=8 -- pad up to 16 here, drop the trailing 8 at output.
     assert heads <= HG, f"fused kernel max HG={HG}, got {heads}"
 
-    # --- Split paged KV --------------------------------------------------
-    k_nope_fp8_full, k_scale_full, k_rope_full = _split_paged_kv_fp8(
-        kv_paged_uint8
-    )
-    k_nope_fp8 = k_nope_fp8_full.reshape(-1, D).contiguous()
-    # Collapse 4 per-tile scales to a per-token MEAN (approximation).
-    k_scale = k_scale_full.reshape(-1, 4).mean(dim=-1).contiguous()
-    k_rope = k_rope_full.reshape(-1, D_ROPE).contiguous()
+    # KV preprocessing is GONE -- kernel reads the 656-byte paged buffer
+    # directly via byte arithmetic in STEPs B1/B2/B5.  Just flatten the
+    # (num_blocks, block_size, 1, 656) buffer to (T_total, 656) so the
+    # buffer_resource sees a contiguous byte tensor.  This is a zero-cost
+    # view (no GPU kernel) since the original buffer is contiguous.
+    if kv_paged_uint8.dim() == 4:
+        kv_paged_flat = kv_paged_uint8.view(-1, KV_BYTES_PER_TOKEN)
+    else:
+        kv_paged_flat = kv_paged_uint8
+    assert kv_paged_flat.is_contiguous()
 
-    # --- Pad heads to HG -------------------------------------------------
+    # --- Pad heads to HG (still needed; in-kernel masking is a follow-up)
+    # Single Q tensor passed through; kernel reads nope/rope by byte
+    # offset, so the host no longer does ``.contiguous()`` splits.
     if heads < HG:
         pad = HG - heads
-        q = torch.nn.functional.pad(q, (0, 0, 0, pad))   # pad heads dim
-    q_nope_bf16 = q[:, :, :D].contiguous()
-    q_rope = q[:, :, D:].contiguous()
-    # Q FP8 quantize is now done IN-KERNEL (STEP A3 of fmha_partial_kernel).
-    # No host-side amax / scale / cast kernels.
+        q = torch.nn.functional.pad(q, (0, 0, 0, pad))
+    if not q.is_contiguous():
+        q = q.contiguous()
+    # Q FP8 quantize is in-kernel (STEP A3 of fmha_partial_kernel).
 
     # --- Indices ---------------------------------------------------------
     if indices.dim() == 3:
@@ -1106,8 +1155,7 @@ def flydsl_sparse_mla_decode_fused(
     launch_partial = _build_sparse_mla_kernel(sm_scale)
     launch_partial(
         partial_o, partial_m, partial_l,
-        q_nope_bf16, q_rope,
-        k_nope_fp8, k_scale, k_rope, indices,
+        q, kv_paged_flat, indices,
         int(seq_len),
     )
 
@@ -1124,33 +1172,37 @@ def flydsl_sparse_mla_decode_fused(
 
 
 def run_test():
+    from sglang.srt.layers.attention.nsa.quant_k_cache import quantize_k_cache
+
     torch.manual_seed(0)
     q_nope_bf16 = torch.randn(HG, D, dtype=torch.bfloat16, device="cuda") * 0.5
     q_rope_bf16 = torch.randn(HG, D_ROPE, dtype=torch.bfloat16, device="cuda") * 0.5
     k_nope_bf16 = torch.randn(T_POOL, D, dtype=torch.bfloat16, device="cuda") * 0.5
     k_rope_bf16 = torch.randn(T_POOL, D_ROPE, dtype=torch.bfloat16, device="cuda") * 0.5
 
-    # Q nope passed in as bf16 (in-kernel FP8 quant).
-    k_nope_fp8, k_scale = _quantize_to_fp8(k_nope_bf16)
-    indices = torch.randperm(T_POOL, device="cuda")[:TOPK].to(torch.int32)
+    # Build the canonical 656-byte paged buffer via NSA quantize_k_cache.
+    kv_full = torch.cat([k_nope_bf16, k_rope_bf16], dim=-1).view(
+        T_POOL // 64, 64, 1, D + D_ROPE
+    )
+    kv_paged = quantize_k_cache(kv_full)
+    kv_paged_flat = kv_paged.view(-1, KV_BYTES_PER_TOKEN).contiguous()
 
+    indices = torch.randperm(T_POOL, device="cuda")[:TOPK].to(torch.int32)
     sm_scale = 1.0 / math.sqrt(D + D_ROPE)
 
-    # Standalone test runs batch=1; reshape to (1, HG, ...) for the
-    # batched kernel signature.
     out = torch.zeros(1, HG, D, dtype=torch.bfloat16, device="cuda")
     partial_o = torch.empty(1, NUM_PARTIALS, HG, D, dtype=torch.float32, device="cuda")
     partial_m = torch.empty(1, NUM_PARTIALS, HG, dtype=torch.float32, device="cuda")
     partial_l = torch.empty(1, NUM_PARTIALS, HG, dtype=torch.float32, device="cuda")
     try:
+        q_concat = torch.cat(
+            [q_nope_bf16, q_rope_bf16], dim=-1
+        ).unsqueeze(0).contiguous()
         launch_partial = _build_sparse_mla_kernel(sm_scale)
         launch_partial(
             partial_o, partial_m, partial_l,
-            q_nope_bf16.unsqueeze(0).contiguous(),
-            q_rope_bf16.unsqueeze(0).contiguous(),
-            k_nope_fp8.contiguous(),
-            k_scale.contiguous(),
-            k_rope_bf16.contiguous(),
+            q_concat,
+            kv_paged_flat,
             indices.unsqueeze(0).contiguous(),
             1,
         )
@@ -1163,9 +1215,13 @@ def run_test():
               f"{type(e).__name__}: {e}")
         return float("inf")
 
-    # Reference: compute full-precision sparse-MLA decode in fp32
-    k_nope_g = k_nope_bf16[indices.long()].float()
-    k_rope_g = k_rope_bf16[indices.long()].float()
+    # Reference: dequantize and compute full-precision attention.
+    from sglang.srt.layers.attention.nsa.dequant_k_cache import dequantize_k_cache
+    kv_round = dequantize_k_cache(kv_paged).view(T_POOL, D + D_ROPE)
+    k_nope_round = kv_round[:, :D]
+    k_rope_round = kv_round[:, D:]
+    k_nope_g = k_nope_round[indices.long()].float()
+    k_rope_g = k_rope_round[indices.long()].float()
     s = (q_nope_bf16.float() @ k_nope_g.T + q_rope_bf16.float() @ k_rope_g.T) * sm_scale
     p = torch.softmax(s, dim=-1)
     ref = (p @ k_nope_g).to(torch.bfloat16)
