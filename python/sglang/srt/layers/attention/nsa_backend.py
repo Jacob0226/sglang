@@ -1579,12 +1579,8 @@ class NativeSparseAttnBackend(
                 page_size=1,
             )
 
-        # Cat-skip is HIP-only: when caller passes q_rope=None on HIP, q_all has
-        # already been set to a zero-copy view of q in the else branch above and
-        # we can reuse it directly. Non-HIP backends fall through to the original
-        # "always cat" behavior to keep CUDA / MUSA paths byte-identical.
         if self.nsa_decode_impl == "flashmla_sparse":
-            if q_all is None or not _is_hip:
+            if q_rope is not None:
                 q_all = concat_mla_absorb_q_general(q_nope, q_rope)
             return self._forward_flashmla_sparse(
                 q_all=q_all,
@@ -1594,7 +1590,7 @@ class NativeSparseAttnBackend(
                 v_head_dim=layer.v_head_dim,
             )
         elif self.nsa_decode_impl == "flashmla_kv":
-            if q_all is None or not _is_hip:
+            if q_rope is not None:
                 q_all = concat_mla_absorb_q_general(q_nope, q_rope)
             return self._forward_flashmla_kv(
                 q_all=q_all,
@@ -1607,6 +1603,10 @@ class NativeSparseAttnBackend(
                 page_table_1=page_table_1,
             )
         elif self.nsa_decode_impl == "tilelang":
+            # Cat-skip (HIP-only): when caller passes q_rope=None on HIP, q_all
+            # has already been set to a zero-copy view of q in the else branch
+            # above and we can reuse it directly. The `not _is_hip` clause keeps
+            # CUDA / MUSA paths byte-identical to pre-patch by always re-cat.
             if q_all is None or not _is_hip:
                 q_all = concat_mla_absorb_q_general(q_nope, q_rope)
             return self._forward_tilelang(
