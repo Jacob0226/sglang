@@ -148,6 +148,7 @@ import torch
 import flydsl.compiler as flyc
 import flydsl.expr as fx
 from flydsl.expr import arith, buffer_ops, gpu, range_constexpr, rocdl, vector
+from flydsl.expr import math as fmath
 from flydsl.expr.typing import T, Int32
 from flydsl.utils.smem_allocator import SmemAllocator, SmemPtr
 from flydsl.runtime.device import get_rocm_arch as _get_arch
@@ -204,22 +205,31 @@ def _build_sparse_mla_kernel(sm_scale: float):
     arch = _get_arch()
     assert str(arch).startswith("gfx95"), f"expected gfx950, got {arch}"
 
-    Q_NOPE_BYTES = HG * D
-    Q_ROPE_BYTES = HG * D_ROPE * 2
-    K_NOPE_BYTES = BI * D
-    K_ROPE_BYTES = BI * D_ROPE * 2
-    P_BYTES = HG * BI                 # fp8
-    S_BYTES = HG * BI * 4             # fp32 staging
-    MAX_BYTES = HG * NUM_WARPS * 4    # per (row, warp) fp32
-    SUM_BYTES = HG * NUM_WARPS * 4
+    Q_NOPE_BF16_BYTES = HG * D * 2      # 16 KB -- transient bf16 staging for in-kernel Q-quant
+    Q_NOPE_BYTES = HG * D               #  8 KB -- fp8 Q nope (output of in-kernel quant)
+    Q_ROPE_BYTES = HG * D_ROPE * 2      #  2 KB -- bf16 rope
+    Q_SCALE_BYTES = HG * 4              # 64 B  -- per-head q_scale fp32
+    K_NOPE_BYTES = BI * D               # 32 KB
+    K_ROPE_BYTES = BI * D_ROPE * 2      #  8 KB
+    P_BYTES = HG * BI                   #  1 KB fp8
+    S_BYTES = HG * BI * 4               #  4 KB fp32 staging
+    MAX_BYTES = HG * NUM_WARPS * 4      #  256 B per (row, warp) fp32
+    SUM_BYTES = HG * NUM_WARPS * 4      #  256 B
 
     allocator = SmemAllocator(
         None, arch=arch, global_sym_name="flydsl_sparse_mla_smem"
     )
-    q_nope_off = 0
-    allocator.ptr = Q_NOPE_BYTES
+    # Q_NOPE_BF16 is transient (used only during in-kernel quant prologue).
+    # Overlap it with K_NOPE region since they're never live at the same
+    # time -- but for first cut keep them separate for clarity.
+    q_nope_bf16_off = 0
+    allocator.ptr = Q_NOPE_BF16_BYTES
+    q_nope_off = allocator.ptr
+    allocator.ptr += Q_NOPE_BYTES
     q_rope_off = allocator.ptr
     allocator.ptr += Q_ROPE_BYTES
+    q_scale_off = allocator.ptr
+    allocator.ptr += Q_SCALE_BYTES
     k_nope_off = allocator.ptr
     allocator.ptr += K_NOPE_BYTES
     k_rope_off = allocator.ptr
@@ -242,10 +252,9 @@ def _build_sparse_mla_kernel(sm_scale: float):
         partial_o_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG, D) fp32
         partial_m_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
         partial_l_ptr: fx.Tensor,      # (BS, NUM_PARTIALS, HG) fp32
-        # Q ---------------------------------------------------------------
-        q_nope_ptr: fx.Tensor,         # (BS, HG, D) fp8
+        # Q (bf16, in-kernel quantize to fp8) -----------------------------
+        q_nope_bf16_ptr: fx.Tensor,    # (BS, HG, D) bf16
         q_rope_ptr: fx.Tensor,         # (BS, HG, D_ROPE) bf16
-        q_scale_ptr: fx.Tensor,        # (BS, HG) fp32
         # KV --------------------------------------------------------------
         k_nope_ptr: fx.Tensor,         # (T_POOL, D) fp8
         k_scale_ptr: fx.Tensor,        # (T_POOL,) fp32
@@ -261,11 +270,10 @@ def _build_sparse_mla_kernel(sm_scale: float):
         lane_hi4 = lane // fx.Int32(16)            # 0..3
         mfma_row = lane % fx.Int32(16)             # 0..15
 
-        # Per-batch offsets (in **element** units; converted to byte offsets
-        # at the various buffer_load / buffer_store sites).
-        q_nope_batch_off = seq_idx * fx.Int32(HG * D)
+        # Per-batch offsets (in **element** units).  Q nope is bf16 now
+        # (was fp8); bf16 = 2 bytes so element_index = i32_index * 2.
+        q_nope_bf16_batch_off = seq_idx * fx.Int32(HG * D)   # bf16 elements
         q_rope_batch_off = seq_idx * fx.Int32(HG * D_ROPE)
-        q_scale_batch_off = seq_idx * fx.Int32(HG)
         indices_batch_off = seq_idx * fx.Int32(TOPK)
 
         # Per-partial output offsets.  Layout: (BS, NUM_PARTIALS, HG, D).
@@ -280,17 +288,27 @@ def _build_sparse_mla_kernel(sm_scale: float):
         po_rsrc = buffer_ops.create_buffer_resource(partial_o_ptr, max_size=True)
         pm_rsrc = buffer_ops.create_buffer_resource(partial_m_ptr, max_size=True)
         pl_rsrc = buffer_ops.create_buffer_resource(partial_l_ptr, max_size=True)
-        qn_rsrc = buffer_ops.create_buffer_resource(q_nope_ptr, max_size=True)
+        qn_bf16_rsrc = buffer_ops.create_buffer_resource(q_nope_bf16_ptr, max_size=True)
         qr_rsrc = buffer_ops.create_buffer_resource(q_rope_ptr, max_size=True)
-        qs_rsrc = buffer_ops.create_buffer_resource(q_scale_ptr, max_size=True)
         kn_rsrc = buffer_ops.create_buffer_resource(k_nope_ptr, max_size=True)
         ks_rsrc = buffer_ops.create_buffer_resource(k_scale_ptr, max_size=True)
         kr_rsrc = buffer_ops.create_buffer_resource(k_rope_ptr, max_size=True)
         idx_rsrc = buffer_ops.create_buffer_resource(indices_ptr, max_size=True)
 
         base = allocator.get_base()
+        # Q bf16 staging (transient -- only live during quant prologue).
+        qn_bf16_lds_i32 = SmemPtr(
+            base, q_nope_bf16_off, T.i32, shape=(Q_NOPE_BF16_BYTES // 4,),
+        ).get()
+        qn_bf16_lds_bf16 = SmemPtr(
+            base, q_nope_bf16_off, T.bf16, shape=(Q_NOPE_BF16_BYTES // 2,),
+        ).get()
+        # Q fp8 (output of in-kernel quant, used by all 32 chunks).
         qn_lds_i32 = SmemPtr(base, q_nope_off, T.i32, shape=(Q_NOPE_BYTES // 4,)).get()
+        # Q rope bf16 (passed through unchanged).
         qr_lds_i32 = SmemPtr(base, q_rope_off, T.i32, shape=(Q_ROPE_BYTES // 4,)).get()
+        # Per-head q_scale (1 fp32 per head, 16 fp32 total).
+        q_scale_lds = SmemPtr(base, q_scale_off, T.f32, shape=(HG,))
         kn_lds_i32 = SmemPtr(base, k_nope_off, T.i32, shape=(K_NOPE_BYTES // 4,)).get()
         kr_lds_i32 = SmemPtr(base, k_rope_off, T.i32, shape=(K_ROPE_BYTES // 4,)).get()
         qr_lds_bf16 = SmemPtr(base, q_rope_off, T.bf16, shape=(Q_ROPE_BYTES // 2,)).get()
@@ -331,23 +349,23 @@ def _build_sparse_mla_kernel(sm_scale: float):
                 w = w + peer
             return w
 
-        # --- STEP A1: load Q_nope to LDS (8 KB / 256 threads x 8 i32) -----
-        # Q_nope offset (element index = i32 index since fp8 is 1 byte
-        # and we load i32 = 4 fp8): q_nope_batch_off / 4.
-        qn_global_base = q_nope_batch_off // fx.Int32(4)
-        for li in range_constexpr(8):
+        # --- STEP A1: load Q_nope (bf16) to LDS -----------------------
+        # Q_nope_bf16: HG*D = 16*512 = 8192 bf16 = 4096 i32; 256 threads
+        # x 16 i32 each.  Loaded into the transient bf16 staging region.
+        qn_bf16_global_base = q_nope_bf16_batch_off // fx.Int32(2)  # i32 idx
+        for li in range_constexpr(Q_NOPE_BF16_BYTES // 4 // BLOCK_THREADS):
             qi = tid + fx.Int32(li * BLOCK_THREADS)
             qv = buffer_ops.buffer_load(
-                qn_rsrc, qn_global_base + qi, vec_width=1, dtype=T.i32
+                qn_bf16_rsrc, qn_bf16_global_base + qi,
+                vec_width=1, dtype=T.i32,
             )
             vector.store(
                 vector.from_elements(T.vec(1, T.i32), [qv]),
-                qn_lds_i32,
+                qn_bf16_lds_i32,
                 [arith.index_cast(T.index, qi)],
             )
 
         # --- STEP A2: load Q_rope to LDS (2 KB / 256 threads x 2 i32) -----
-        # Q_rope is bf16 = 2 bytes, so element-to-i32 ratio = 2.
         qr_global_base = q_rope_batch_off // fx.Int32(2)
         for li in range_constexpr(2):
             qi = tid + fx.Int32(li * BLOCK_THREADS)
@@ -359,6 +377,97 @@ def _build_sparse_mla_kernel(sm_scale: float):
                 qr_lds_i32,
                 [arith.index_cast(T.index, qi)],
             )
+
+        gpu.barrier()  # Q_NOPE_BF16 must be fully resident before quant.
+
+        # --- STEP A3: in-kernel Q-nope FP8 quantize -------------------
+        # Replaces ~80us of host-side preprocessing (amax + scale + cast).
+        # Layout: 4 warps, each warp handles HG/4 = 4 heads sequentially.
+        # Per head: 64 lanes x 8 dims = 512 dims = 1 head row.
+        # 1. Each lane reads 8 bf16 from row=h, cols=lane*8..lane*8+7.
+        # 2. Compute lane-local amax across 8 fp32-cast values.
+        # 3. Wave-reduce maxnumf across 64 lanes (offsets 32,16,8,4,2,1).
+        # 4. q_scale_h = amax / FP8_MAX  (broadcast to all 64 lanes).
+        # 5. Each lane casts its 8 bf16 to fp8 (cvt_pk_fp8_f32 x 4),
+        #    packs 8 fp8 = 2 i32 = 1 i64 store, writes Q_NOPE_FP8_LDS.
+        # 6. lane==0 also writes q_scale_h to Q_SCALE_LDS[h].
+        FP8MAX_C = arith.constant(FP8_MAX, type=T.f32)
+        c_w = fx.Int32(WARP_SIZE)
+        for h_local in range_constexpr(HG // NUM_WARPS):  # 4 heads / warp
+            h_global = warp_id * fx.Int32(HG // NUM_WARPS) + fx.Int32(h_local)
+
+            # Each lane covers 8 contiguous bf16 elements: row h_global,
+            # cols lane*8 .. lane*8+7.
+            base_elem = h_global * fx.Int32(D) + lane * fx.Int32(8)
+            bf16_8 = vector.load_op(
+                T.vec(8, T.bf16), qn_bf16_lds_bf16,
+                [arith.index_cast(T.index, base_elem)],
+            )
+
+            # Cast bf16 -> fp32, take abs (via math.absf), find lane-local max.
+            f32_8 = arith.extf(T.vec(8, T.f32), bf16_8)
+            abs_8 = fmath.absf(f32_8)
+            local_amax = vector.reduction(T.f32, "maxnumf", abs_8)
+
+            # Wave-reduce across 64 lanes -> wave-wide amax for this head.
+            wave_amax = local_amax
+            for sh in [32, 16, 8, 4, 2, 1]:
+                peer = wave_amax.shuffle_xor(fx.Int32(sh), c_w)
+                wave_amax = wave_amax.maximumf(peer)
+
+            # q_scale = amax / FP8_MAX (clamp tiny to avoid div-by-zero
+            # downstream); broadcast to all 64 lanes already via shuffle.
+            EPS_F = arith.constant(1e-8, type=T.f32)
+            q_scale_h = wave_amax / FP8MAX_C
+            q_scale_h = q_scale_h.maximumf(EPS_F)
+
+            # All 64 lanes have the same q_scale_h after the wave reduce,
+            # so 64 lanes writing the same value to LDS slot h_global is a
+            # benign write race.  Avoid scf.IfOp + the SSA-dominance trap
+            # we hit with shared subexpressions across if-blocks.
+            q_scale_lds.store(
+                q_scale_h, [arith.index_cast(T.index, h_global)]
+            )
+
+            # Quantize: cast 8 bf16 -> 8 fp8 using q_scale_h.  Pack via
+            # cvt_pk_fp8_f32 (2 fp32 -> packed-pair into i32 word).
+            inv_scale = ONE_F / q_scale_h
+            fp32_scaled = []
+            for d in range_constexpr(8):
+                v = vector.extract(f32_8, static_position=[d], dynamic_position=[])
+                fp32_scaled.append(v * inv_scale)
+
+            zero_i32 = arith.constant(0, type=T.i32)
+            i32_pair_lo = rocdl.cvt_pk_fp8_f32(
+                T.i32, fp32_scaled[0], fp32_scaled[1], zero_i32, False
+            )
+            i32_pair_lo = rocdl.cvt_pk_fp8_f32(
+                T.i32, fp32_scaled[2], fp32_scaled[3], i32_pair_lo, True
+            )
+            i32_pair_hi = rocdl.cvt_pk_fp8_f32(
+                T.i32, fp32_scaled[4], fp32_scaled[5], zero_i32, False
+            )
+            i32_pair_hi = rocdl.cvt_pk_fp8_f32(
+                T.i32, fp32_scaled[6], fp32_scaled[7], i32_pair_hi, True
+            )
+
+            # Q_NOPE_FP8_LDS layout: (HG, D) fp8 = (16, 512) row-major.
+            # Each lane writes 8 fp8 = 2 i32 contiguous bytes at byte
+            # offset (h_global * D + lane * 8).  Convert to i32 index.
+            q_fp8_byte_off = h_global * fx.Int32(D) + lane * fx.Int32(8)
+            q_fp8_i32_idx = q_fp8_byte_off // fx.Int32(4)
+            vector.store(
+                vector.from_elements(T.vec(1, T.i32), [i32_pair_lo]),
+                qn_lds_i32,
+                [arith.index_cast(T.index, q_fp8_i32_idx)],
+            )
+            vector.store(
+                vector.from_elements(T.vec(1, T.i32), [i32_pair_hi]),
+                qn_lds_i32,
+                [arith.index_cast(T.index, q_fp8_i32_idx + fx.Int32(1))],
+            )
+
+        gpu.barrier()  # Q_NOPE_FP8 must be fully populated before chunks.
 
         # --- Persistent online-softmax state (per lane) -----------------
         # Lane (lane_hi4, mfma_row) owns rows {lane_hi4*4 .. lane_hi4*4+3}.
@@ -471,12 +580,12 @@ def _build_sparse_mla_kernel(sm_scale: float):
             # acc_qk[r] = acc_qk[r] * sm_scale * q_scale[row=lane_hi4*4+r] * k_scale[token=warp_id*16+mfma_row]
             # Load q_scale for our 4 rows.  Q-scale is per-row HG.
             # Use scalar buffer_loads (cheap, 4 per lane).
+            # Read per-head q_scale from LDS (populated by STEP A3 quant prologue).
             q_scale_v = arith.constant_vector(0.0, T.f32x4)
             for r in range_constexpr(4):
                 row_idx = lane_hi4 * fx.Int32(4) + fx.Int32(r)
-                qs = buffer_ops.buffer_load(
-                    qs_rsrc, q_scale_batch_off + row_idx,
-                    vec_width=1, dtype=T.f32,
+                qs = q_scale_lds.load(
+                    [arith.index_cast(T.index, row_idx)]
                 )
                 q_scale_v = vector.insert(qs, q_scale_v, static_position=[r], dynamic_position=[])
 
@@ -764,9 +873,8 @@ def _build_sparse_mla_kernel(sm_scale: float):
         partial_o_ptr: fx.Tensor,
         partial_m_ptr: fx.Tensor,
         partial_l_ptr: fx.Tensor,
-        q_nope_ptr: fx.Tensor,
+        q_nope_bf16_ptr: fx.Tensor,
         q_rope_ptr: fx.Tensor,
-        q_scale_ptr: fx.Tensor,
         k_nope_ptr: fx.Tensor,
         k_scale_ptr: fx.Tensor,
         k_rope_ptr: fx.Tensor,
@@ -781,7 +889,7 @@ def _build_sparse_mla_kernel(sm_scale: float):
 
         fmha_partial_kernel(
             partial_o_ptr, partial_m_ptr, partial_l_ptr,
-            q_nope_ptr, q_rope_ptr, q_scale_ptr,
+            q_nope_bf16_ptr, q_rope_ptr,
             k_nope_ptr, k_scale_ptr, k_rope_ptr, indices_ptr,
         ).launch(
             grid=(bs, fx.Int32(NUM_PARTIALS)),
@@ -966,17 +1074,10 @@ def flydsl_sparse_mla_decode_fused(
     if heads < HG:
         pad = HG - heads
         q = torch.nn.functional.pad(q, (0, 0, 0, pad))   # pad heads dim
-    q_nope = q[:, :, :D].contiguous()
+    q_nope_bf16 = q[:, :, :D].contiguous()
     q_rope = q[:, :, D:].contiguous()
-
-    # --- Quantize Q nope per-(batch, head) row --------------------------
-    q_nope_amax = q_nope.abs().amax(dim=-1, keepdim=True).float()
-    q_scale = (q_nope_amax / FP8_MAX).clamp(min=1e-8).squeeze(-1)  # (batch, HG)
-    q_nope_scaled = (q_nope.float() / q_scale.unsqueeze(-1)).clamp(
-        -FP8_MAX, FP8_MAX
-    )
-    q_nope_fp8 = q_nope_scaled.to(_FP8_DTYPE).contiguous()
-    q_scale = q_scale.contiguous()
+    # Q FP8 quantize is now done IN-KERNEL (STEP A3 of fmha_partial_kernel).
+    # No host-side amax / scale / cast kernels.
 
     # --- Indices ---------------------------------------------------------
     if indices.dim() == 3:
@@ -1005,7 +1106,7 @@ def flydsl_sparse_mla_decode_fused(
     launch_partial = _build_sparse_mla_kernel(sm_scale)
     launch_partial(
         partial_o, partial_m, partial_l,
-        q_nope_fp8, q_rope, q_scale,
+        q_nope_bf16, q_rope,
         k_nope_fp8, k_scale, k_rope, indices,
         int(seq_len),
     )
@@ -1029,7 +1130,7 @@ def run_test():
     k_nope_bf16 = torch.randn(T_POOL, D, dtype=torch.bfloat16, device="cuda") * 0.5
     k_rope_bf16 = torch.randn(T_POOL, D_ROPE, dtype=torch.bfloat16, device="cuda") * 0.5
 
-    q_nope_fp8, q_scale = _quantize_to_fp8(q_nope_bf16)
+    # Q nope passed in as bf16 (in-kernel FP8 quant).
     k_nope_fp8, k_scale = _quantize_to_fp8(k_nope_bf16)
     indices = torch.randperm(T_POOL, device="cuda")[:TOPK].to(torch.int32)
 
@@ -1045,9 +1146,8 @@ def run_test():
         launch_partial = _build_sparse_mla_kernel(sm_scale)
         launch_partial(
             partial_o, partial_m, partial_l,
-            q_nope_fp8.unsqueeze(0).contiguous(),
+            q_nope_bf16.unsqueeze(0).contiguous(),
             q_rope_bf16.unsqueeze(0).contiguous(),
-            q_scale.unsqueeze(0).contiguous(),
             k_nope_fp8.contiguous(),
             k_scale.contiguous(),
             k_rope_bf16.contiguous(),
