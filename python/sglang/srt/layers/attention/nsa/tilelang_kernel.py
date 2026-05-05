@@ -1024,7 +1024,12 @@ def tilelang_sparse_fwd(
     assert topk == 2048
     if _is_hip:
         if _is_gfx95_supported:
-            # decode kernel
+            # decode kernel: bypass the default JITKernel.__call__ (which
+            # adds ~12 us of per-call validation + ctypes packing) by going
+            # straight to the Cython forward with skip_tensor_validation=True.
+            # Tensors satisfy the static shape/stride contracts already
+            # since this code path only handles the GLM-5.1 / DSv3 decode
+            # case (block_I=64, topk=2048, d_v=512).
             if q.shape[0] <= 64:
                 kernel_partial = sparse_mla_fwd_decode_partial(
                     num_heads,
@@ -1038,10 +1043,14 @@ def tilelang_sparse_fwd(
                 kernel_combine = sparse_mla_fwd_decode_combine(
                     num_heads, d_v, topk, head_per_block=4, block_I=64, threads=256
                 )
-                partial_o, partial_lse = kernel_partial(
-                    q.unsqueeze(0), kv.unsqueeze(0), indices.unsqueeze(0)
+                partial_o, partial_lse = kernel_partial.adapter.cython_wrapper.forward(
+                    [q.unsqueeze(0), kv.unsqueeze(0), indices.unsqueeze(0)],
+                    skip_tensor_validation=True,
                 )
-                out = kernel_combine(partial_o, partial_lse)
+                out = kernel_combine.adapter.cython_wrapper.forward(
+                    [partial_o, partial_lse],
+                    skip_tensor_validation=True,
+                )
                 return out
 
             # prefill kernel
