@@ -649,64 +649,30 @@ def flydsl_sparse_mla_decode_fp8(
     torch.Tensor
         ``(seq_len, heads, d_v)`` bf16 attention output.
     """
-    if not _try_import_flydsl():
-        raise RuntimeError(
-            f"FlyDSL is not available: {_FLYDSL_IMPORT_ERROR!r}.  "
-            "Install ROCm/FlyDSL or pick another SGLANG_NSA_TILELANG_VARIANT."
-        )
-
     # ------------------------------------------------------------------
-    # The QK / SV MFMA inner loops are deferred (see module docstring,
-    # sections D1 / D2 / D3).  Returning silently with the structural
-    # scaffolding alone would produce numerical garbage (zero output),
-    # which the unit benchmark would mistakenly include in the speedup
-    # table.  Fail loudly instead so the test harness can SKIP this row
-    # and still report bf16 vs fp8 cleanly.
+    # The fully-fused single-pass FP8 fmha kernel
+    # (``_build_sparse_mla_decode_fp8_kernel`` above) is still WIP -- it
+    # compiles to MLIR but trips a list of FlyDSL API gaps before launch
+    # (see ``flydsl_sparse_mla.py`` E.bug.1..6 for the bug-list).
+    #
+    # For TODAY we route the public entry point to **Approach C** in
+    # ``flydsl_sparse_mla_v2.py``: a verified end-to-end implementation
+    # that composes flydsl_hgemm (validated bit-exact in our smoke test)
+    # with torch softmax instead of fusing everything in one kernel.
+    # That gives correct numbers + measurable latency now; the fused
+    # kernel will replace this dispatch once the API gaps are closed.
     # ------------------------------------------------------------------
-    raise NotImplementedError(
-        "FlyDSL sparse-MLA decode kernel: structural scaffolding only "
-        "(launcher, LDS layout, online softmax, gather are in place; the "
-        "QK / SV MFMA inner loops require hardware-in-the-loop tuning -- "
-        "see module docstring sections D1, D2, D3 for the deferred work "
-        "and pointers to the matching pa_decode_fp8.py line ranges)."
+    from sglang.srt.layers.attention.nsa.flydsl_sparse_mla_v2 import (
+        flydsl_sparse_mla_decode_v2,
     )
 
-    # --- Code below runs once D1+D2+D3 are filled in -----------------
-    # NOTE: keep the assertions and the build/launch sequence ready so
-    # finishing the kernel is just "fill the MFMA loops + delete the
-    # raise above".
-    assert q.is_cuda and q.dim() == 3, q.shape  # noqa: F401  (unreachable today)
-    assert d_v == _DV, f"flydsl backend fixes d_v={_DV}, got {d_v}"
-    seq_len, heads, dim_total = q.shape
-    assert dim_total == _DV + _DROPE
-    topk = indices.shape[-1]
-    assert topk % _BI == 0, f"topk must be multiple of {_BI}, got {topk}"
-
-    k_nope_fp8, k_scale, k_rope = _split_paged_kv_fp8(kv_paged_uint8)
-
-    if indices.dim() == 3:
-        assert indices.shape[1] == 1
-        indices = indices.squeeze(1)
-    indices = indices.contiguous().to(torch.int32)
-
-    out = torch.empty(
-        (seq_len, heads, _DV), dtype=torch.bfloat16, device=q.device
+    return flydsl_sparse_mla_decode_v2(
+        q=q,
+        kv_paged_uint8=kv_paged_uint8,
+        indices=indices,
+        sm_scale=sm_scale,
+        d_v=d_v,
     )
-
-    launch_fn = _build_sparse_mla_decode_fp8_kernel(
-        heads=heads, topk=topk, sm_scale=float(sm_scale)
-    )
-
-    launch_fn(
-        out,
-        q.contiguous(),
-        k_nope_fp8.contiguous(),
-        k_scale.contiguous(),
-        k_rope.contiguous(),
-        indices,
-        int(seq_len),
-    )
-    return out
 
 
 __all__ = [
