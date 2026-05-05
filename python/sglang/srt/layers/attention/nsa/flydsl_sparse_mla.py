@@ -184,8 +184,7 @@ def _build_sparse_mla_kernel(sm_scale: float):
         None, arch=arch, global_sym_name="flydsl_sparse_mla_smem"
     )
     # Q_NOPE_BF16 is transient (used only during in-kernel quant prologue).
-    # Overlap it with K_NOPE region since they're never live at the same
-    # time -- but for first cut keep them separate for clarity.
+    # Could overlap with K_NOPE region but kept separate for clarity.
     q_nope_bf16_off = 0
     allocator.ptr = Q_NOPE_BF16_BYTES
     q_nope_off = allocator.ptr
@@ -504,6 +503,9 @@ def _build_sparse_mla_kernel(sm_scale: float):
             # --- STEP B1: gather K_nope_chunk (direct paged read) -----
             # Read directly from the 656-byte paged KV buffer at byte
             # offset ``src_row * 656 + 0..511``.  i32 stride = 164.
+            # Note: vec_width=2/4 gather measured SLOWER than vec_width=1
+            # on MI355X gfx950 (33us -> 47us with vec2; vec4 also caused
+            # GPU faults).  Sticking with single-i32 loads.
             for li in range_constexpr(K_NOPE_BYTES // 4 // BLOCK_THREADS):
                 lds_idx = tid + fx.Int32(li * BLOCK_THREADS)
                 token = lds_idx // fx.Int32(D_I32)
@@ -789,13 +791,12 @@ def _build_sparse_mla_kernel(sm_scale: float):
             # P (HG, BI) fp8, V = K_nope (BI, D) fp8.  Each warp owns
             # SV_N_TILES_WARP=8 n-tiles of D, K=BI=64 with 2 k-chunks of 32.
             #
-            # MFMA A operand (P): lane (i, j) provides 8 fp8 at row=j, k={i*8..+7}
-            #  P_LDS_T layout = (BI, HG): P_LDS_T[k_token, row=j], so for a
-            #  k-chunk starting at k_off, lane needs BI tokens [k_off+i*8..+7]
-            #  for HG row=j.  Byte offset = (k_off + i*8 + 0..7) * HG + j.
-            #  4 fp8 per i32 -> we need 2 i32 per lane (8 fp8).
+            # B operand (V) is loaded as 8 single-byte LDS reads per lane
+            # since K_nope_LDS is (BI, D) row-major and the 8 contiguous
+            # K-bytes a lane needs are D=512 bytes apart in this layout.
+            # An attempted V_LDS_T (D, BI) col-major transpose blew the
+            # workgroup LDS budget (87.5 KB > 64 KB on gfx950 default).
             for nt in range_constexpr(SV_N_TILES_WARP):
-                # n_tile col base in V's column dim D
                 n_tile_col_base = warp_id * fx.Int32(SV_N_PER_WARP) + fx.Int32(nt * 16)
 
                 acc_nt = acc_o[nt]
@@ -815,12 +816,9 @@ def _build_sparse_mla_kernel(sm_scale: float):
                     a_b_i32 = vector.extract(a_b, static_position=[0], dynamic_position=[])
                     a_i64 = _pack_i32_pair_to_i64(a_a_i32, a_b_i32)
 
-                    # --- B operand load (V = K_nope_LDS)  [E.bug.5 fix]
+                    # --- B operand load (V = K_nope_LDS) [E.bug.5 fix]
                     # Lane (i, j) needs 8 fp8 at row={k_off+i*8..i*8+7}, col=v_col.
-                    # K_nope_LDS is (BI, D) row-major fp8; consecutive K-rows
-                    # are D=512 bytes apart, NOT i32-contiguous for general
-                    # v_col.  Issue 8 single-byte loads per lane and pack
-                    # them into one i64 via vector.from_elements + bitcast.
+                    # 8 single-byte LDS reads per lane.
                     v_col = n_tile_col_base + mfma_row
                     v_byte_base = (
                         (fx.Int32(k_off) + lane_hi4 * fx.Int32(8))
