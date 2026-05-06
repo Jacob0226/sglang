@@ -151,7 +151,9 @@ class DeepseekMLAForwardMixin:
                                 dtype_quant=torch.float8_e4m3fn,
                                 res1=None,
                                 output_unquantized_inp1=True,
+                                transpose_scale=True,
                             )
+                            q_quanted[1]._aiter_bpreshuffle_layout = True
                             q = q_quanted
                         else:
                             q, _, k_nope, _ = fused_rms_fp8_group_quant(
@@ -165,7 +167,9 @@ class DeepseekMLAForwardMixin:
                                 dtype_quant=torch.float8_e4m3fn,
                                 res1=None,
                                 output_unquantized_inp1=False,
+                                transpose_scale=True,
                             )
+                            q[1]._aiter_bpreshuffle_layout = True
 
                     elif _use_aiter:
                         q, k_nope = fused_qk_rmsnorm_bf16(

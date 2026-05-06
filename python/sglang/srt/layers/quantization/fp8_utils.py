@@ -780,7 +780,19 @@ def aiter_w8a8_block_fp8_linear(
     if input_scale is not None:
         q_input = input_2d
         x_scale = input_scale
-        if not use_triton:
+        # bpreshuffle GEMM wants scale in pre-transposed (column-major) layout;
+        # triton GEMM wants default (row-major). Both layouts have identical
+        # shape+stride after `.view()`, so we use a tensor attribute marker
+        # (`_aiter_bpreshuffle_layout`) set by upstream producers to record
+        # which layout was actually written. Apply the transpose+copy only
+        # when there's a layout mismatch (saves ~4us per GEMM call when the
+        # upstream + downstream agree). See fused_rms_fp8_group_quant call
+        # sites in communicator.py / forward_mla.py / forward_mha.py.
+        upstream_transposed = getattr(
+            input_scale, "_aiter_bpreshuffle_layout", False
+        )
+        needs_transposed = not use_triton
+        if upstream_transposed != needs_transposed:
             x_scale = x_scale.transpose(-1, -2).contiguous().view(*x_scale.shape)
     else:
         q_input, x_scale = aiter_per1x128_quant(
