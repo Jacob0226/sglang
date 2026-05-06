@@ -780,20 +780,29 @@ def aiter_w8a8_block_fp8_linear(
     if input_scale is not None:
         q_input = input_2d
         x_scale = input_scale
-        # bpreshuffle GEMM wants scale in pre-transposed (column-major) layout;
-        # triton GEMM wants default (row-major). Both layouts have identical
-        # shape+stride after `.view()`, so we use a tensor attribute marker
-        # (`_aiter_bpreshuffle_layout`) set by upstream producers to record
-        # which layout was actually written. Apply the transpose+copy only
-        # when there's a layout mismatch (saves ~4us per GEMM call when the
-        # upstream + downstream agree). See fused_rms_fp8_group_quant call
-        # sites in communicator.py / forward_mla.py / forward_mha.py.
-        upstream_transposed = getattr(
-            input_scale, "_aiter_bpreshuffle_layout", False
-        )
+        # The bpreshuffle CK GEMM wants `scale` in pre-transposed (column-major)
+        # memory layout; the triton GEMM wants the default row-major layout.
+        # Upstream producers (fused_{rms,flatten}_fp8_group_quant called with
+        # transpose_scale=True) tag the returned scale tensor with
+        # `_aiter_bpreshuffle_layout=True`. Note the two layouts share the same
+        # `.shape` and `.stride()` after the upstream `.view()`, so we need the
+        # marker to know which layout the data was actually written in.
+        upstream_transposed = getattr(input_scale, "_aiter_bpreshuffle_layout", False)
         needs_transposed = not use_triton
-        if upstream_transposed != needs_transposed:
+        if upstream_transposed and needs_transposed:
+            # FAST PATH: layouts match, no copy needed (saves ~4us per GEMM).
+            pass
+        elif (not upstream_transposed) and needs_transposed:
+            # default -> bpreshuffle: existing PR #24125 transformation.
             x_scale = x_scale.transpose(-1, -2).contiguous().view(*x_scale.shape)
+        elif upstream_transposed and (not needs_transposed):
+            # bpreshuffle -> default: the transpose-contig-view trick is NOT
+            # a self-inverse, so we must use the proper inverse here:
+            # data is laid out as (num_bs_cols, M) row-major in storage; view
+            # back to that shape, transpose, then contiguous-copy to default.
+            M, num_bs_cols = x_scale.shape
+            x_scale = x_scale.view(num_bs_cols, M).transpose(0, 1).contiguous()
+        # else (default + triton): nothing to do.
     else:
         q_input, x_scale = aiter_per1x128_quant(
             input_2d,

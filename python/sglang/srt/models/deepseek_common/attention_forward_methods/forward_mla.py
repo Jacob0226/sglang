@@ -536,8 +536,12 @@ class DeepseekMLAForwardMixin:
             elif self.o_proj.weight.dtype == torch.float8_e4m3fn:
                 attn_bmm_output = attn_bmm_output.transpose(0, 1)
                 attn_bmm_output = fused_flatten_fp8_group_quant(
-                    attn_bmm_output, group_size=128, dtype_quant=torch.float8_e4m3fn
+                    attn_bmm_output,
+                    group_size=128,
+                    dtype_quant=torch.float8_e4m3fn,
+                    transpose_scale=True,
                 )
+                attn_bmm_output[1]._aiter_bpreshuffle_layout = True
             else:
                 attn_bmm_output = attn_bmm_output.transpose(0, 1).flatten(1, 2)
 
