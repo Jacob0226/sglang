@@ -327,6 +327,7 @@ DSA_CHOICES = [
     "flashmla_auto",
     "fa3",
     "tilelang",
+    "triton",
     "aiter",
     "trtllm",
 ]
