@@ -383,7 +383,7 @@ class DeepseekSparseAttnBackend(
                 16 // self.num_q_heads if self.num_q_heads < 16 else 1
             )
             self.num_head_padded = self.num_q_heads * self.head_repeat_factor
-            self.aiter_dsa_max_split_per_batch = 64
+            self.aiter_dsa_max_split_per_batch = 16
             self.aiter_dsa_metadata_capacity = 0
             self.aiter_dsa_metadata_max_seqlen_q = 0
             self.aiter_dsa_metadata_q_dtype = None
@@ -397,7 +397,7 @@ class DeepseekSparseAttnBackend(
                 self._ensure_aiter_dsa_decode_metadata_buffer(
                     max_seqlen_q=1,
                     batch_size=max_bs,
-                    q_dtype=torch.bfloat16,
+                    q_dtype=fp8_dtype,
                     kv_dtype=fp8_dtype,
                 )
 
@@ -449,7 +449,7 @@ class DeepseekSparseAttnBackend(
             is_sparse=True,
             fast_mode=False,
             num_kv_splits=self.aiter_dsa_max_split_per_batch,
-            intra_batch_mode=True,
+            intra_batch_mode=False,
         )
 
         return (
@@ -546,9 +546,8 @@ class DeepseekSparseAttnBackend(
             max_seqlen_qo=max_seqlen_q,
             uni_seqlen_qo=max_seqlen_q,
             fast_mode=False,
-            topk=self.dsa_index_topk,
             max_split_per_batch=self.aiter_dsa_max_split_per_batch,
-            intra_batch_mode=True,
+            intra_batch_mode=False,
             dtype_q=q_dtype,
             dtype_kv=kv_dtype,
         )
@@ -561,9 +560,59 @@ class DeepseekSparseAttnBackend(
             "reduce_indptr": self.aiter_dsa_reduce_indptr,
             "reduce_final_map": self.aiter_dsa_reduce_final_map,
             "reduce_partial_map": self.aiter_dsa_reduce_partial_map,
-            "intra_batch_mode": True,
+            "intra_batch_mode": False,
             "num_kv_splits": self.aiter_dsa_max_split_per_batch,
         }
+
+    def _build_aiter_dsa_decode_schedule(
+        self,
+        cu_seqlens_q: torch.Tensor,
+        kv_indptr: torch.Tensor,
+        bs: int,
+        max_seqlen_q: int,
+    ) -> None:
+        """Build the aiter DSA persistent decode work-schedule ONCE per decode step.
+
+        The schedule (get_mla_metadata_v1) depends only on the per-batch KV counts
+        (= min(context, topk) = dsa_cache_seqlens), which are identical across all
+        MLA layers in a step. SGLang previously rebuilt it per layer inside
+        _forward_aiter (78x/step, ~85us each => ~7ms/step on MI355X); ATOM builds it
+        once. This hoists it out, mirroring ATOM, into the metadata-prep path (run
+        once per step, outside the captured CUDA graph). _forward_aiter then only
+        consumes self.aiter_dsa_work_* + runs the per-layer index compaction.
+
+        kv_indptr must be dsa_cu_seqlens_k (cumsum of dsa_cache_seqlens); the same
+        tensor is used as the kernel's kv_indptr in _forward_aiter so the compacted
+        index offsets and the schedule agree.
+        """
+        if not (self.dsa_decode_impl == "aiter" and self.kv_cache_dtype == fp8_dtype):
+            return
+        if self.aiter_dsa_work_metadata is None:
+            return
+        self.aiter_dsa_kv_last_page_lens[:bs].fill_(1)
+        get_mla_metadata_v1(
+            cu_seqlens_q,
+            kv_indptr,
+            self.aiter_dsa_kv_last_page_lens[:bs],
+            self.num_head_padded,
+            1,
+            False,
+            self.aiter_dsa_work_metadata,
+            self.aiter_dsa_work_info_set,
+            self.aiter_dsa_work_indptr,
+            self.aiter_dsa_reduce_indptr,
+            self.aiter_dsa_reduce_final_map,
+            self.aiter_dsa_reduce_partial_map,
+            page_size=1,
+            kv_granularity=16,
+            max_seqlen_qo=max_seqlen_q,
+            uni_seqlen_qo=max_seqlen_q,
+            fast_mode=False,
+            max_split_per_batch=self.aiter_dsa_max_split_per_batch,
+            intra_batch_mode=False,
+            dtype_q=fp8_dtype,
+            dtype_kv=fp8_dtype,
+        )
 
     def _build_paged_mqa_schedule_2d_ctx_lens(
         self,
@@ -917,6 +966,13 @@ class DeepseekSparseAttnBackend(
             indexer_seq_lens=indexer_seq_lens,
             token_to_batch_idx=token_to_batch_idx,
         )
+        if forward_batch.forward_mode.is_decode_or_idle():
+            # Hoist the aiter DSA decode work-schedule build out of the per-layer
+            # _forward_aiter path (once/step, mirroring ATOM). See
+            # _build_aiter_dsa_decode_schedule.
+            self._build_aiter_dsa_decode_schedule(
+                cu_seqlens_q, dsa_cu_seqlens_k, forward_batch.batch_size, max_seqlen_q
+            )
         self.forward_metadata = metadata
 
     def _cal_indexer_k_start_end(
@@ -1179,6 +1235,13 @@ class DeepseekSparseAttnBackend(
             real_page_table=real_page_table,
             dsa_extend_seq_lens_list=dsa_extend_seq_lens_list,
         )
+        if forward_mode.is_decode_or_idle():
+            # Build the hoisted aiter DSA decode work-schedule before graph capture
+            # (outside the captured region), into the persistent self.aiter_dsa_work_*
+            # buffers that _forward_aiter reads.
+            self._build_aiter_dsa_decode_schedule(
+                cu_seqlens_q, dsa_cu_seqlens_k, bs, max_seqlen_q
+            )
         self.decode_cuda_graph_metadata[bs] = metadata
         self.forward_metadata = metadata
 
@@ -1353,6 +1416,18 @@ class DeepseekSparseAttnBackend(
             torch.cumsum(dsa_cache_seqlens, dim=0, dtype=torch.int32)
         )
         # NOTE(dark): (dsa-) cu_seqlens_q is always arange, no need to copy
+
+        if forward_mode.is_decode_or_idle():
+            # Rebuild the hoisted aiter DSA decode work-schedule once per replay,
+            # outside the captured graph (same pattern as the DeepGEMM schedule
+            # above). Writes in place into self.aiter_dsa_work_* which the captured
+            # _forward_aiter kernels read.
+            self._build_aiter_dsa_decode_schedule(
+                metadata.cu_seqlens_q,
+                metadata.dsa_cu_seqlens_k,
+                bs,
+                metadata.max_seq_len_q,
+            )
 
         assert self.real_page_size == metadata.page_size
         if self.real_page_size > 1:
@@ -2180,9 +2255,9 @@ class DeepseekSparseAttnBackend(
         q = q_all.reshape(-1, layer.tp_q_head_num * layer.head_dim)
 
         if layer.head_dim != layer.v_head_dim:
-            o = q.new_empty((q.shape[0], layer.tp_q_head_num * layer.v_head_dim))
+            o = q.new_empty((q.shape[0], layer.tp_q_head_num * layer.v_head_dim), dtype=torch.bfloat16)
         else:
-            o = torch.empty_like(q)
+            o = torch.empty_like(q, dtype=torch.bfloat16)
 
         if self.need_pad_heads:
             q_kernel = q.view(
@@ -2193,7 +2268,8 @@ class DeepseekSparseAttnBackend(
                     q.shape[0],
                     layer.tp_q_head_num * self.head_repeat_factor,
                     layer.v_head_dim,
-                )
+                ),
+                dtype=torch.bfloat16,
             )
         else:
             q_kernel = q.view(-1, layer.tp_q_head_num, layer.head_dim)
@@ -2204,27 +2280,34 @@ class DeepseekSparseAttnBackend(
         aiter_persistent_kwargs = {}
         if kv_cache.dtype == fp8_dtype:
             kv_scale = torch.ones((), dtype=torch.float32, device=q_kernel.device)
+        if q_kernel.dtype == fp8_dtype:
+            q_scale = torch.ones((), dtype=torch.float32, device=q_kernel.device)
 
-        kv_indptr = self.kv_indptr
-
-        non_minus1_mask = page_table_1 != -1
-        non_minus1_counts = non_minus1_mask.sum(dim=1)
-        kv_indptr[1 : bs + 1] = torch.cumsum(non_minus1_counts, dim=0)
+        # kv_indptr = dsa_cu_seqlens_k (cumsum of the topk-clipped per-batch counts).
+        # Identical across all MLA layers in the step and already computed once in the
+        # metadata-prep path, so we reuse it here instead of recomputing per layer.
+        # The per-layer index compaction still runs (each layer selects different KV
+        # tokens) but writes into the same offsets the hoisted schedule expects.
+        kv_indptr = metadata.dsa_cu_seqlens_k
 
         kv_indices = self.kv_indices
         get_valid_kv_indices(page_table_1, kv_indptr, kv_indices, bs)
 
         kv_last_page_lens = metadata.cu_seqlens_q
         if kv_cache.dtype == fp8_dtype:
-            aiter_persistent_kwargs = self._prepare_aiter_dsa_decode_metadata(
-                metadata.cu_seqlens_q,
-                kv_indptr,
-                bs,
-                metadata.max_seq_len_q,
-                q_kernel.dtype,
-                kv_cache.dtype,
-            )
-            kv_last_page_lens = aiter_persistent_kwargs.pop("kv_last_page_lens")
+            # Consume the work-schedule built once per step by
+            # _build_aiter_dsa_decode_schedule (was rebuilt here per layer before).
+            kv_last_page_lens = self.aiter_dsa_kv_last_page_lens[:bs]
+            aiter_persistent_kwargs = {
+                "work_meta_data": self.aiter_dsa_work_metadata,
+                "work_indptr": self.aiter_dsa_work_indptr,
+                "work_info_set": self.aiter_dsa_work_info_set,
+                "reduce_indptr": self.aiter_dsa_reduce_indptr,
+                "reduce_final_map": self.aiter_dsa_reduce_final_map,
+                "reduce_partial_map": self.aiter_dsa_reduce_partial_map,
+                "intra_batch_mode": False,
+                "num_kv_splits": self.aiter_dsa_max_split_per_batch,
+            }
 
         mla_decode_fwd(
             q_kernel,
@@ -2258,9 +2341,9 @@ class DeepseekSparseAttnBackend(
         q = q_all.reshape(-1, layer.tp_q_head_num * layer.head_dim)
 
         if layer.head_dim != layer.v_head_dim:
-            o = q.new_empty((num_tokens, layer.tp_q_head_num * layer.v_head_dim))
+            o = q.new_empty((num_tokens, layer.tp_q_head_num * layer.v_head_dim), dtype=torch.bfloat16)
         else:
-            o = torch.empty_like(q)
+            o = torch.empty_like(q, dtype=torch.bfloat16)
 
         if self.need_pad_heads:
             q_kernel = q.view(
@@ -2271,7 +2354,8 @@ class DeepseekSparseAttnBackend(
                     num_tokens,
                     layer.tp_q_head_num * self.head_repeat_factor,
                     layer.v_head_dim,
-                )
+                ),
+                dtype=torch.bfloat16,
             )
         else:
             q_kernel = q.view(-1, layer.tp_q_head_num, layer.head_dim)
@@ -2282,6 +2366,8 @@ class DeepseekSparseAttnBackend(
         aiter_persistent_kwargs = {}
         if kv_cache.dtype == fp8_dtype:
             kv_scale = torch.ones((), dtype=torch.float32, device=q_kernel.device)
+        if q_kernel.dtype == fp8_dtype:
+            q_scale = torch.ones((), dtype=torch.float32, device=q_kernel.device)
 
         non_minus1_mask = page_table_1 != -1
         non_minus1_counts = non_minus1_mask.sum(dim=1)
