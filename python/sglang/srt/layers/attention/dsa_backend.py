@@ -74,9 +74,10 @@ _DSA_TRITON_PREFILL = get_bool_env_var("SGLANG_DSA_TRITON_PREFILL")
 _IS_GFX95 = is_gfx95_supported()
 
 # SPIKE (throwaway): when set, short-context decode (kv_len <= index_topk) skips
-# the DSA indexer (see forward_mla.py) and this backend attends the FULL context
-# page table via the aiter decode kernel (dense MLA). Requires launching with
-# --dsa-decode-backend aiter so kv_indptr/kv_indices buffers are allocated.
+# the DSA indexer (see forward_mla.py). This backend then synthesizes identity
+# top-k indices (select every context position), so the normal transform +
+# attention kernel run unchanged and correct while paying zero indexer cost.
+# Only valid for kv_len <= index_topk (i.e. i1k); do NOT enable for long context.
 _SPIKE_DECODE_DENSE = os.environ.get("SGLANG_SPIKE_DECODE_DENSE", "0") == "1"
 
 if is_cuda():
@@ -2116,11 +2117,22 @@ class DeepseekSparseAttnBackend(
             topk_indices = self._pad_topk_indices(topk_indices, q_nope.shape[0])
 
         if _SPIKE_DECODE_DENSE and topk_indices is None:
-            # SPIKE: indexer was skipped upstream (short-context decode). Attend
-            # the full context page table densely — _forward_aiter counts the
-            # non-(-1) entries per request, so this reads only the real kv_len.
-            page_table_1 = metadata.page_table_1
-        elif self.hisparse_coordinator is not None:
+            # SPIKE: the indexer was skipped upstream (short-context decode).
+            # Synthesize identity top-k indices that select ALL context positions
+            # (0..kv_len-1), -1 padded to index_topk. For kv_len <= index_topk
+            # this equals the real sparse top-k result (every position selected),
+            # so the normal transform + attention kernel run unchanged and give a
+            # correct (dense-equivalent) answer while paying zero indexer cost.
+            num_tokens = q_nope.shape[0]
+            ar = torch.arange(
+                self.dsa_index_topk, device=q_nope.device, dtype=torch.int32
+            )
+            seqlens = metadata.cache_seqlens_int32[:num_tokens].to(torch.int32)
+            topk_indices = torch.where(
+                ar[None, :] < seqlens[:, None], ar[None, :], -1
+            )
+
+        if self.hisparse_coordinator is not None:
             page_table_1 = self.hisparse_coordinator.swap_in_selected_pages(
                 forward_batch.req_pool_indices,
                 forward_batch.seq_lens,
