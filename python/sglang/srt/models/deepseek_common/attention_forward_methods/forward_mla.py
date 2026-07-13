@@ -285,10 +285,25 @@ class DeepseekMLAForwardMixin:
         q_pe = None
         k_pe = None
         fusion_plan: Optional[MlaBmmFusionPlan] = None
-        # SPIKE: skip indexer for short-context decode (dense MLA path).
-        skip_indexer_dense = (
-            _SPIKE_DECODE_DENSE and forward_batch.forward_mode.is_decode()
-        )
+        # SPIKE: skip indexer for short-context decode (dense path). Correct only
+        # when every request's kv_len <= index_topk (top-k selects everything, so
+        # dense == sparse). In cuda-graph capture we always build the dense graph;
+        # the graph runner only replays it for max_kv_len <= index_topk batches
+        # (longer batches fall back to eager, where the elif below runs the real
+        # indexer). This keeps both <2K and >2K correct.
+        skip_indexer_dense = False
+        if (
+            _SPIKE_DECODE_DENSE
+            and forward_batch.forward_mode.is_decode()
+            and getattr(self, "use_dsa", False)
+        ):
+            if get_is_capture_mode():
+                skip_indexer_dense = True
+            elif (
+                forward_batch.seq_lens_cpu is not None
+                and forward_batch.seq_lens_cpu.max().item() <= self.indexer.index_topk
+            ):
+                skip_indexer_dense = True
         if self.q_lora_rank is not None:
             q, latent_cache = (
                 get_attn_tp_context()
