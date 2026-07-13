@@ -14,6 +14,36 @@ import torch
 # matching full-page-table routing. Requires --dsa-decode-backend aiter.
 _SPIKE_DECODE_DENSE = os.environ.get("SGLANG_SPIKE_DECODE_DENSE", "0") == "1"
 
+_spike_dbg_n = 0
+
+
+def _spike_debug_compare(real, forward_batch, index_topk, layer_id):
+    """DEBUG: compare real indexer top-k vs identity synthesis (first few calls)."""
+    global _spike_dbg_n
+    if _spike_dbg_n >= 6:
+        return
+    import torch as _t
+
+    seqlens = forward_batch.seq_lens.to(_t.int32)
+    ar = _t.arange(index_topk, device=real.device, dtype=_t.int32)
+    ident = _t.where(ar[None, :] < seqlens[:, None], ar[None, :], -1)
+    r0 = real[0]
+    i0 = ident[0]
+    r_valid = int((r0 >= 0).sum().item())
+    i_valid = int((i0 >= 0).sum().item())
+    r_set = set(r0[r0 >= 0].tolist())
+    i_set = set(i0[i0 >= 0].tolist())
+    print(
+        f"[SPIKE_DBG] layer={layer_id} seqlen0={int(seqlens[0].item())} "
+        f"real_valid={r_valid} ident_valid={i_valid} "
+        f"sets_equal={r_set == i_set} "
+        f"real_only={sorted(list(r_set - i_set))[:8]} "
+        f"ident_only={sorted(list(i_set - r_set))[:8]} "
+        f"real_first8={r0[:8].tolist()} real_max={int(r0.max().item())}",
+        flush=True,
+    )
+    _spike_dbg_n += 1
+
 from sglang.srt.compilation.compilation_config import register_split_op
 from sglang.srt.distributed.parallel_state import get_dcp_group
 from sglang.srt.environ import envs
@@ -429,7 +459,22 @@ class DeepseekMLAForwardMixin:
                     fusion_plan = self._make_mla_bmm_fusion_plan(q, q_nope)
 
                 if q_lora is not None:
-                    if skip_indexer_dense:
+                    if skip_indexer_dense and os.environ.get(
+                        "SGLANG_SPIKE_DEBUG", "0"
+                    ) == "1":
+                        # DEBUG: compare real indexer top-k vs identity synthesis.
+                        real = self.indexer(
+                            x=hidden_states,
+                            q_lora=q_lora,
+                            positions=positions,
+                            forward_batch=forward_batch,
+                            layer_id=self.layer_id,
+                        )
+                        _spike_debug_compare(
+                            real, forward_batch, self.indexer.index_topk, self.layer_id
+                        )
+                        topk_indices = real  # keep output correct while debugging
+                    elif skip_indexer_dense:
                         topk_indices = None
                     elif self.should_run_indexer(prev_topk_indices):
                         topk_indices = self.indexer(
