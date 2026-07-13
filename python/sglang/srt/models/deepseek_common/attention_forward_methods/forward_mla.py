@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 import torch
+
+# SPIKE (throwaway): static gate to measure the i1k "dense decode" prize.
+# When set, short-context decode (kv_len <= index_topk) skips the DSA indexer
+# entirely and runs dense MLA decode via the aiter backend. Read at import so it
+# must be exported before launching the server. See dsa_backend.py for the
+# matching full-page-table routing. Requires --dsa-decode-backend aiter.
+_SPIKE_DECODE_DENSE = os.environ.get("SGLANG_SPIKE_DECODE_DENSE", "0") == "1"
 
 from sglang.srt.compilation.compilation_config import register_split_op
 from sglang.srt.distributed.parallel_state import get_dcp_group
@@ -277,6 +285,10 @@ class DeepseekMLAForwardMixin:
         q_pe = None
         k_pe = None
         fusion_plan: Optional[MlaBmmFusionPlan] = None
+        # SPIKE: skip indexer for short-context decode (dense MLA path).
+        skip_indexer_dense = (
+            _SPIKE_DECODE_DENSE and forward_batch.forward_mode.is_decode()
+        )
         if self.q_lora_rank is not None:
             q, latent_cache = (
                 get_attn_tp_context()
@@ -374,7 +386,9 @@ class DeepseekMLAForwardMixin:
                     q = self.q_b_proj(q)[0].view(
                         -1, self.num_local_heads, self.qk_head_dim
                     )
-                if self.should_run_indexer(prev_topk_indices):
+                if skip_indexer_dense:
+                    topk_indices = None
+                elif self.should_run_indexer(prev_topk_indices):
                     topk_indices = self.indexer(
                         x=hidden_states,
                         q_lora=q_lora,
@@ -400,7 +414,9 @@ class DeepseekMLAForwardMixin:
                     fusion_plan = self._make_mla_bmm_fusion_plan(q, q_nope)
 
                 if q_lora is not None:
-                    if self.should_run_indexer(prev_topk_indices):
+                    if skip_indexer_dense:
+                        topk_indices = None
+                    elif self.should_run_indexer(prev_topk_indices):
                         topk_indices = self.indexer(
                             x=hidden_states,
                             q_lora=q_lora,

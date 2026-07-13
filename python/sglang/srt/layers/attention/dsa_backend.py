@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
@@ -71,6 +72,12 @@ from sglang.srt.utils import (
 # concat). Enable with SGLANG_DSA_TRITON_PREFILL=1. Decode stays on TileLang.
 _DSA_TRITON_PREFILL = get_bool_env_var("SGLANG_DSA_TRITON_PREFILL")
 _IS_GFX95 = is_gfx95_supported()
+
+# SPIKE (throwaway): when set, short-context decode (kv_len <= index_topk) skips
+# the DSA indexer (see forward_mla.py) and this backend attends the FULL context
+# page table via the aiter decode kernel (dense MLA). Requires launching with
+# --dsa-decode-backend aiter so kv_indptr/kv_indices buffers are allocated.
+_SPIKE_DECODE_DENSE = os.environ.get("SGLANG_SPIKE_DECODE_DENSE", "0") == "1"
 
 if is_cuda():
     import deep_gemm
@@ -2108,7 +2115,12 @@ class DeepseekSparseAttnBackend(
         if topk_indices is not None:
             topk_indices = self._pad_topk_indices(topk_indices, q_nope.shape[0])
 
-        if self.hisparse_coordinator is not None:
+        if _SPIKE_DECODE_DENSE and topk_indices is None:
+            # SPIKE: indexer was skipped upstream (short-context decode). Attend
+            # the full context page table densely — _forward_aiter counts the
+            # non-(-1) entries per request, so this reads only the real kv_len.
+            page_table_1 = metadata.page_table_1
+        elif self.hisparse_coordinator is not None:
             page_table_1 = self.hisparse_coordinator.swap_in_selected_pages(
                 forward_batch.req_pool_indices,
                 forward_batch.seq_lens,
