@@ -1,0 +1,146 @@
+# Kernel classification config for LLM profiling analysis.
+# Each category maps to a list of patterns that match kernel names.
+# A kernel is assigned to the FIRST matching category (order matters).
+# The "module" field groups categories for higher-level analysis.
+#
+# To add a new model, copy this file and adjust patterns / categories.
+
+model: GLM-4.7
+layer_module: Glm4MoeDecoderLayer
+
+categories:
+  # ========== Attention ==========
+  Attn-Quant:
+    module: Attention
+    description: "Quantize activation before attention GEMM"
+    patterns:
+      - "dynamic_per_token_scaled_quant.*Li32"
+      - "per_token_quant_fp8.*small_batch"
+
+  Attn-GEMM:
+    module: Attention
+    description: "QKV projection and output projection GEMM"
+    patterns:
+      - "kernel_gemm_xdl_cshuffle"
+      - "cutlass13device_kernel"
+      - "cutlass.*GemmUniversal"
+
+  QK_Norm:
+    module: Attention
+    description: "QK normalization (RMSNorm on Q and K)"
+    patterns:
+      - "elementwise_kernel_manual_unroll"
+      - "rmsnorm_quant_kernel.*Li64"
+      - "fused_qknorm"
+
+  Rotary:
+    module: Attention
+    description: "Rotary position embedding"
+    patterns:
+      - "rotary_embedding_kernel"
+      - "BatchQKApplyRotary"
+
+  StoreKV:
+    module: Attention
+    description: "Store KV cache"
+    patterns:
+      - "index_elementwise_kernel.*index_put"
+      - "store_kvcache"
+
+  PagesAttn:
+    module: Attention
+    description: "Paged attention (decode)"
+    patterns:
+      - "paged_attention_ll4mi"
+      - "fmhaSm100fKernel"
+      - "flash_attn"
+      - "flashinfer"
+
+  RowParallelLinear:
+    module: Attention
+    description: "Output projection (row parallel) quant + GEMM"
+    patterns:
+      - "dynamic_per_token_scaled_quant.*Li8"
+      - "per_token_quant_fp8.*nv_fp8_e4m3"
+
+  # ========== Router ==========
+  GateGEMM:
+    module: Router
+    description: "Router gate GEMM"
+    patterns:
+      - "Cijk_Alik_Bljk"
+      - "nvjet_sm100"
+      - "cublasLt.*splitK"
+
+  GateAct:
+    module: Router
+    description: "Router gate activation (sigmoid)"
+    patterns:
+      - "Cijk_SB_BiasS_HAS_ScaleAlpha"
+      - "fused_add_sigmoid"
+      - "triton_poi_fused_add_sigmoid"
+
+  TopK:
+    module: Router
+    description: "TopK expert selection"
+    patterns:
+      - "grouped_topk"
+      - "gatherTopK"
+      - "bitonicSort"
+      - "triton_poi_fused_sum"
+      - "triton_poi_fused__to_copy_bitwise"
+      - "triton_red_fused_copy_gather"
+      - "triton_poi_fused__to_copy_copy_div"
+
+  DataAligner:
+    module: Router
+    description: "Data alignment for MoE dispatch"
+    patterns:
+      - "vectorized_elementwise_kernel.*CUDAFunctor_add.*BFloat16"
+      - "bfloat16_copy_kernel"
+
+  Routing:
+    module: Router
+    description: "MoE token routing / sorting"
+    patterns:
+      - "MoeSortingKernel"
+      - "moe_align_block"
+      - "count_and_sort_expert"
+
+  # ========== Experts ==========
+  Expert-Quant:
+    module: Experts
+    description: "Quantize before expert GEMM"
+    patterns:
+      - "dynamic_per_token_scaled_quant.*Li32.*moe"
+      - "dynamic_per_token_scaled_quant"
+
+  Expert-GEMM:
+    module: Experts
+    description: "Expert MLP GEMM (gate_up + down)"
+    patterns:
+      - "kernel_moe_gemm"
+      - "fused_moe_kernel"
+      - "activation.*act_and_mul"
+
+  # ========== Communication ==========
+  AllReduce:
+    module: Communication
+    description: "Cross-device allreduce"
+    patterns:
+      - "cross_device_reduce"
+      - "ncclDevKernel"
+
+  # ========== Layer Norm ==========
+  LayerNorm:
+    module: LayerNorm
+    description: "Pre-attention / pre-MLP RMSNorm + quant"
+    patterns:
+      - "add_rmsnorm_quant_kernel.*Li256"
+
+  # ========== Uncategorized ==========
+  Other:
+    module: Other
+    description: "Uncategorized kernels"
+    patterns:
+      - ".*"

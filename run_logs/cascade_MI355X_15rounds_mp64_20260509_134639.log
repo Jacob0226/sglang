@@ -1,0 +1,1057 @@
++ ulimit -n 65535
++ sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'
+sh: 1: cannot create /proc/sys/kernel/numa_balancing: Read-only file system
++ true
++ MODEL_PATH=/data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528
++ TAG=
++ DOCKER=untagged-docker
++ TP_SIZE=8
++ HOST=localhost
++ PORT=30000
++ HICACHE_SIZE=auto
++ HOST_HEADROOM_GB=200
++ NUM_CLIENTS=300
++ NUM_ROUNDS=10
++ REQUEST_LENGTH=4096
++ OUTPUT_LENGTH=1
++ MAX_PARALLEL=8
++ REQUEST_RATE=32
++ CUDA_GRAPH_MAX_BS=0
++ CHUNKED_PREFILL_SIZE=65536
++ MAX_PREFILL_TOKENS=65536
++ WAIT_FOR_SERVER_SEC=900
++ [[ 8 -gt 0 ]]
++ case $1 in
++ TAG=MI355X_15rounds_mp64
++ shift 2
++ [[ 6 -gt 0 ]]
++ case $1 in
++ DOCKER=rocm/sgl-dev:v0.5.11-rocm720-mi35x-20260507
++ shift 2
++ [[ 4 -gt 0 ]]
++ case $1 in
++ NUM_ROUNDS=15
++ shift 2
++ [[ 2 -gt 0 ]]
++ case $1 in
++ MAX_PARALLEL=64
++ shift 2
++ [[ 0 -gt 0 ]]
++ '[' -z MI355X_15rounds_mp64 ']'
++ '[' '!' -d /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 ']'
+++ basename /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528
++ MODEL_NAME=DeepSeek-R1-0528
++ '[' auto = auto ']'
+++ awk '/^MemAvailable:/ {print int($2/1024/1024)}' /proc/meminfo
++ MEM_AVAIL_GB=2960
++ USABLE_GB=2760
++ '[' 2760 -le 0 ']'
++ PER_RANK=345
++ PER_RANK=320
++ '[' 320 -lt 32 ']'
++ '[' 320 -gt 512 ']'
++ HICACHE_SIZE=320
++ echo '>>> auto --hicache-size: 320 GB per rank' '(MemAvailable=2960 GB, headroom=200 GB,' 'TP=8 ranks; total host pool = 2560 GB)'
+>>> auto --hicache-size: 320 GB per rank (MemAvailable=2960 GB, headroom=200 GB, TP=8 ranks; total host pool = 2560 GB)
+++ echo rocm/sgl-dev:v0.5.11-rocm720-mi35x-20260507
+++ sed 's/\//_/g; s/:/-/g'
++ DOCKER_FILENAME=rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507
++ LOG_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320
++ mkdir -p /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320
++ echo '>>> bench folder: /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320'
+>>> bench folder: /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320
+++ get_gpu_hbm_gb
+++ command -v rocm-smi
+++ rocm-smi --showmeminfo vram
+++ awk '/VRAM Total Memory/ {print int($NF/1024/1024/1024); exit}'
++ HBM_GB=287
++ echo '>>> detected HBM: 287 GB per GPU, TP=8'
+>>> detected HBM: 287 GB per GPU, TP=8
+++ sed 's|.*/node||'
+++ ls -d /sys/devices/system/node/node0 /sys/devices/system/node/node1
+++ sort -n
+++ paste -sd,
++ NUMA_NODES=0,1
++ NUMACTL_PREFIX=()
++ command -v numactl
++ [[ 0,1 == *,* ]]
++ NUMACTL_PREFIX=(numactl --interleave="$NUMA_NODES")
++ echo '>>> NUMA interleave: --interleave=0,1'
+>>> NUMA interleave: --interleave=0,1
++ tee /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320/host_info.log
+++ date '+%F %T %Z'
++ echo '=== cascade_dsr1.sh host snapshot @ 2026-05-09 13:46:40 UTC ==='
++ echo '--- lscpu ---'
++ lscpu
++ grep -E 'Architecture|Vendor|Model name|CPU\(s\)|Socket|Core|Thread|NUMA'
++ echo '--- /proc/meminfo ---'
++ grep -E '^MemTotal:|^MemAvailable:|^MemFree:|^Cached:' /proc/meminfo
++ echo '--- NUMA per-node DRAM ---'
++ for n in /sys/devices/system/node/node[0-9]*
++ '[' -d /sys/devices/system/node/node0 ']'
+++ basename /sys/devices/system/node/node0
+++ sed s/node//
++ nid=0
+++ awk '/MemTotal/{print int($4/1024/1024)" GB"}' /sys/devices/system/node/node0/meminfo
++ mem='1511 GB'
+++ cat /sys/devices/system/node/node0/cpulist
++ cpus=0-63,128-191
++ printf '  node %s: DRAM=%s, CPUs=%s\n' 0 '1511 GB' 0-63,128-191
++ for n in /sys/devices/system/node/node[0-9]*
++ '[' -d /sys/devices/system/node/node1 ']'
+++ basename /sys/devices/system/node/node1
+++ sed s/node//
++ nid=1
+++ awk '/MemTotal/{print int($4/1024/1024)" GB"}' /sys/devices/system/node/node1/meminfo
++ mem='1511 GB'
+++ cat /sys/devices/system/node/node1/cpulist
++ cpus=64-127,192-255
++ printf '  node %s: DRAM=%s, CPUs=%s\n' 1 '1511 GB' 64-127,192-255
++ echo '--- GPU info ---'
++ command -v rocm-smi
++ rocm-smi --showid
++ grep 'Device Name'
++ head -1
++ python3 - /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320/bench_meta.json
++ HICACHE_FILE_STORE_DIR=/tmp/cascade_dsr1_l3_MI355X_15rounds_mp64_320
++ rm -rf /tmp/cascade_dsr1_l3_MI355X_15rounds_mp64_320
++ mkdir -p /tmp/cascade_dsr1_l3_MI355X_15rounds_mp64_320
++ export SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR=/tmp/cascade_dsr1_l3_MI355X_15rounds_mp64_320
++ SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR=/tmp/cascade_dsr1_l3_MI355X_15rounds_mp64_320
++ trap 'rm -rf "$HICACHE_FILE_STORE_DIR" 2>/dev/null; pkill -9 -f sglang.launch_server 2>/dev/null || true' EXIT
++ SERVER_LOG=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320/server.log
++ '[' 0 -le 0 ']'
++ CUDA_GRAPH_MAX_BS=64
++ echo '>>> cuda-graph-max-bs=64 (coupled to max-parallel)'
+>>> cuda-graph-max-bs=64 (coupled to max-parallel)
++ echo '>>> chunked-prefill-size=65536, max-prefill-tokens=65536'
+>>> chunked-prefill-size=65536, max-prefill-tokens=65536
++ SERVER_CMD=("${NUMACTL_PREFIX[@]}" python3 -m sglang.launch_server --model-path "$MODEL_PATH" --tp "$TP_SIZE" --host "$HOST" --port "$PORT" --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size "$CHUNKED_PREFILL_SIZE" --max-prefill-tokens "$MAX_PREFILL_TOKENS" --cuda-graph-max-bs "$CUDA_GRAPH_MAX_BS" --enable-hierarchical-cache --hicache-size "$HICACHE_SIZE" --hicache-mem-layout page_first_direct --hicache-io-backend kernel --hicache-write-policy write_through --hicache-storage-backend file --hicache-storage-prefetch-policy best_effort)
++ is_rocm
++ '[' -e /dev/kfd ']'
++ export ROCM_QUICK_REDUCE_QUANTIZATION=INT4 SAFETENSORS_FAST_GPU=1
++ ROCM_QUICK_REDUCE_QUANTIZATION=INT4
++ SAFETENSORS_FAST_GPU=1
++ SERVER_CMD+=(--attention-backend aiter)
++ echo '>>> launching SGLang (cache_mode=L3_file, hicache-size=320 GB)'
+>>> launching SGLang (cache_mode=L3_file, hicache-size=320 GB)
++ echo 'numactl --interleave=0,1 python3 -m sglang.launch_server --model-path /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 --tp 8 --host localhost --port 30000 --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 65536 --max-prefill-tokens 65536 --cuda-graph-max-bs 64 --enable-hierarchical-cache --hicache-size 320 --hicache-mem-layout page_first_direct --hicache-io-backend kernel --hicache-write-policy write_through --hicache-storage-backend file --hicache-storage-prefetch-policy best_effort --attention-backend aiter'
++ tee /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320/server.log
+numactl --interleave=0,1 python3 -m sglang.launch_server --model-path /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 --tp 8 --host localhost --port 30000 --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 65536 --max-prefill-tokens 65536 --cuda-graph-max-bs 64 --enable-hierarchical-cache --hicache-size 320 --hicache-mem-layout page_first_direct --hicache-io-backend kernel --hicache-write-policy write_through --hicache-storage-backend file --hicache-storage-prefetch-policy best_effort --attention-backend aiter
++ numactl --interleave=0,1 python3 -m sglang.launch_server --model-path /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 --tp 8 --host localhost --port 30000 --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 65536 --max-prefill-tokens 65536 --cuda-graph-max-bs 64 --enable-hierarchical-cache --hicache-size 320 --hicache-mem-layout page_first_direct --hicache-io-backend kernel --hicache-write-policy write_through --hicache-storage-backend file --hicache-storage-prefetch-policy best_effort --attention-backend aiter
++ tee -a /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320/server.log
+++ date +%s
++ deadline=1778335300
++ echo '>>> waiting up to 900s for /health 200...'
+>>> waiting up to 900s for /health 200...
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334400 -ge 1778335300 ']'
++ sleep 5
+/usr/bin/python3: Error while finding module specification for 'sglang.launch_server' (ModuleNotFoundError: No module named 'sglang')
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334405 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334410 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334415 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334420 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334425 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334430 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334435 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334440 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334445 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334450 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334455 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334460 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334465 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334470 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334475 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334480 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334485 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334490 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334495 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334500 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334505 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334510 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334515 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334520 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334525 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334530 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334535 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334540 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334545 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334550 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334555 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334560 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334565 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334570 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334575 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334580 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334585 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334590 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334595 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334600 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334605 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334610 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334615 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334620 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334625 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334630 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334635 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334640 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334645 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334650 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334655 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334660 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334665 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334670 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334675 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334680 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334685 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334690 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334695 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334700 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334705 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334710 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334715 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334720 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334725 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334730 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334735 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334740 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334745 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334750 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334755 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334760 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334765 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334770 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334775 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334780 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334785 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334791 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334796 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334801 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334806 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334811 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334816 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334821 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334826 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334831 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334836 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334841 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334846 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334851 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334856 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334861 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334866 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334871 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334876 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334881 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334886 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334891 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334896 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334901 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334906 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334911 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334916 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334921 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334926 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334931 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334936 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334941 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334946 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334951 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334956 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334961 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334966 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334971 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334976 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334981 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334986 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334991 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778334996 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335001 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335006 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335011 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335016 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335021 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335026 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335031 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335036 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335041 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335046 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335051 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335056 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335061 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335066 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335071 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335076 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335081 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335086 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335091 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335096 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335101 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335106 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335111 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335116 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335121 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335126 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335131 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335136 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335141 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335146 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335151 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335156 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335161 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335166 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335171 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335176 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335181 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335186 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335191 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335196 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335201 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335206 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335211 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335216 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335221 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335226 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335231 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335236 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335241 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335246 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335251 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335256 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335261 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335266 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335271 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335276 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335281 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335286 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335291 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335296 -ge 1778335300 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778335301 -ge 1778335300 ']'
++ echo 'ERROR: server didn'\''t come up — see /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320/server.log'
+ERROR: server didn't come up — see /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds_mp64/L3_file/size_320/server.log
++ exit 1
++ rm -rf /tmp/cascade_dsr1_l3_MI355X_15rounds_mp64_320
++ pkill -9 -f sglang.launch_server
++ true

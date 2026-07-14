@@ -1,0 +1,68 @@
+diff --git a/python/sglang/srt/models/deepseek_v2.py b/python/sglang/srt/models/deepseek_v2.py
+index 0eb5d008e..96c818d88 100644
+--- a/python/sglang/srt/models/deepseek_v2.py
++++ b/python/sglang/srt/models/deepseek_v2.py
+@@ -618,30 +618,48 @@ class DeepseekV2MoE(nn.Module):
+         use_reduce_scatter: bool = False,
+         gemm_output_zero_allocator: BumpAllocator = None,
+     ) -> torch.Tensor:
+-        current_stream = torch.cuda.current_stream()
+-        self.alt_stream.wait_stream(current_stream)
+-        shared_output = self._forward_shared_experts(
+-            hidden_states, gemm_output_zero_allocator
+-        )
+         server_args = get_global_server_args()
+         dispatch_info = (
+             ExpertLocationDispatchInfo.init_new(layer_id=self.layer_id)
+             if server_args.enable_eplb
+             else None
+         )
+-        with torch.cuda.stream(self.alt_stream):
+-            # router_logits: (num_tokens, n_experts)
++
++        if _is_hip:
++            # HIP only: run gate before fork so alt_stream path is shorter
+             router_logits = self.gate(hidden_states, gemm_output_zero_allocator)
+-            topk_output = self.topk(
+-                hidden_states,
+-                router_logits,
+-                expert_location_dispatch_info=dispatch_info,
++            current_stream = torch.cuda.current_stream()
++            self.alt_stream.wait_stream(current_stream)
++            shared_output = self._forward_shared_experts(
++                hidden_states, gemm_output_zero_allocator
+             )
+-            final_hidden_states = self.experts(hidden_states, topk_output)
+-            if (not _is_cuda and not _use_aiter) or isinstance(
+-                self.experts.quant_method, KTEPWrapperMethod
+-            ):
++            with torch.cuda.stream(self.alt_stream):
++                topk_output = self.topk(
++                    hidden_states,
++                    router_logits,
++                    expert_location_dispatch_info=dispatch_info,
++                )
++                final_hidden_states = self.experts(hidden_states, topk_output)
+                 final_hidden_states *= self.routed_scaling_factor
++        else:
++            current_stream = torch.cuda.current_stream()
++            self.alt_stream.wait_stream(current_stream)
++            shared_output = self._forward_shared_experts(
++                hidden_states, gemm_output_zero_allocator
++            )
++            with torch.cuda.stream(self.alt_stream):
++                # router_logits: (num_tokens, n_experts)
++                router_logits = self.gate(hidden_states, gemm_output_zero_allocator)
++                topk_output = self.topk(
++                    hidden_states,
++                    router_logits,
++                    expert_location_dispatch_info=dispatch_info,
++                )
++                final_hidden_states = self.experts(hidden_states, topk_output)
++                if (not _is_cuda and not _use_aiter) or isinstance(
++                    self.experts.quant_method, KTEPWrapperMethod
++                ):
++                    final_hidden_states *= self.routed_scaling_factor
+ 
+         current_stream.wait_stream(self.alt_stream)
+         final_hidden_states += shared_output

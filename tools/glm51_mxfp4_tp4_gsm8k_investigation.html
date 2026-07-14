@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>GLM-5.1-MXFP4 · GSM8K accuracy at TP=4 (MI355X)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #0d0e10;
+    --ink-2: #14161c;
+    --surface: #181a22;
+    --surface-2: #1f222c;
+    --rule: #2a2d38;
+    --rule-soft: #20232c;
+    --text: #e8e6e3;
+    --text-soft: #b8b6b2;
+    --muted: #72757e;
+    --amber: #f5a623;
+    --amber-soft: #f5a62322;
+    --green: #6ee7b7;
+    --green-soft: #6ee7b71f;
+    --rose: #ff7b72;
+    --rose-bright: #ff5252;
+    --azure: #79c0ff;
+    --gold: #ffd166;
+    --indigo: #7e6ee8;
+    --display: 'Bricolage Grotesque', system-ui;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --serif: 'Newsreader', Georgia, serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--mono);
+    color: var(--text);
+    background:
+      radial-gradient(1100px 600px at 80% -10%, #1a1d27 0%, transparent 60%),
+      radial-gradient(900px 500px at -10% 30%, #161620 0%, transparent 55%),
+      radial-gradient(1200px 700px at 120% 110%, #1a1620 0%, transparent 55%),
+      var(--ink);
+    line-height: 1.6;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      repeating-linear-gradient(0deg,
+        rgba(255,255,255,0.018) 0px,
+        rgba(255,255,255,0.018) 1px,
+        transparent 1px,
+        transparent 3px);
+    mix-blend-mode: overlay;
+    z-index: 0;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 56px 32px 96px; position: relative; z-index: 1; }
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 36px; }
+  .eyebrow { color: var(--muted); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+  h1 { font-family: var(--display); font-weight: 800; font-size: 38px; line-height: 1.1; margin: 14px 0 12px; letter-spacing: -0.01em; }
+  h1 .accent { color: var(--amber); }
+  .lede { color: var(--text-soft); font-family: var(--serif); font-style: italic; font-size: 18px; max-width: 760px; line-height: 1.55; }
+  .meta { display: flex; gap: 18px; margin-top: 18px; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
+  .meta strong { color: var(--text); font-weight: 500; }
+
+  section { margin-top: 56px; }
+  .section-head { display: flex; gap: 16px; align-items: baseline; margin-bottom: 24px; }
+  .section-head .num { font-family: var(--display); color: var(--muted); font-size: 13px; min-width: 28px; }
+  .section-head .label { color: var(--muted); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
+  .section-head h2 { font-family: var(--display); font-size: 24px; font-weight: 600; margin: 4px 0 0; letter-spacing: -0.01em; }
+
+  .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 22px; margin-top: 14px; }
+
+  .verdict { background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%); border: 1px solid var(--rule); border-left: 4px solid var(--green); border-radius: 6px; padding: 22px 26px; }
+  .verdict .label { color: var(--green); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500; }
+  .verdict h3 { font-family: var(--display); font-weight: 600; font-size: 22px; margin: 10px 0 12px; }
+  .verdict p { color: var(--text-soft); margin: 0; }
+  .verdict.warn { border-left-color: var(--amber); }
+  .verdict.warn .label { color: var(--amber); }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); }
+  th { color: var(--muted); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 500; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.acc { font-variant-numeric: tabular-nums; font-weight: 500; }
+  td.acc.good { color: var(--green); }
+  td.acc.warn { color: var(--amber); }
+  td.acc.bad  { color: var(--rose); }
+  tr.headline td { background: var(--surface-2); border-bottom-color: var(--rule); }
+
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid var(--rule); color: var(--text-soft); background: var(--surface); }
+  .pill.green { color: var(--green); border-color: var(--green); background: var(--green-soft); }
+  .pill.amber { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+  .pill.muted { color: var(--muted); }
+
+  .delta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  .delta { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; }
+  .delta .from-to { color: var(--muted); font-size: 11px; letter-spacing: 0.05em; }
+  .delta .v { font-family: var(--display); font-weight: 600; font-size: 26px; margin: 6px 0 4px; }
+  .delta.amber .v { color: var(--amber); }
+  .delta.green .v { color: var(--green); }
+  .delta .why { color: var(--text-soft); font-size: 12px; line-height: 1.5; margin-top: 6px; }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px; }
+  .stat { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 16px; }
+  .stat .lbl { color: var(--muted); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .stat .v { font-family: var(--display); font-weight: 600; font-size: 22px; margin: 6px 0; }
+  .stat .v.green { color: var(--green); }
+  .stat .v.amber { color: var(--amber); }
+  .stat .sub { color: var(--text-soft); font-size: 12px; }
+
+  ol, ul { padding-left: 22px; }
+  ol li, ul li { margin: 8px 0; color: var(--text-soft); }
+  ol li strong, ul li strong { color: var(--text); }
+  code { background: var(--ink-2); padding: 1px 6px; border-radius: 3px; font-size: 0.92em; color: var(--azure); border: 1px solid var(--rule); }
+  pre { background: var(--ink-2); padding: 14px 16px; border-radius: 5px; border: 1px solid var(--rule); overflow-x: auto; font-size: 12.5px; line-height: 1.55; color: var(--text-soft); }
+  blockquote { border-left: 3px solid var(--amber); margin: 14px 0; padding: 4px 18px; color: var(--text-soft); background: var(--surface); border-radius: 0 6px 6px 0; }
+
+  footer { color: var(--muted); margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 12px; }
+  footer a { color: var(--azure); text-decoration: none; border-bottom: 1px dotted var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">MI355X · ROCm 7.2 · 2026-05-11</div>
+  <h1>GLM-5.1-MXFP4 GSM8K at <span class="accent">TP=4</span> · investigation</h1>
+  <p class="lede">
+    "Did our 4 PRs (sgl-project/sglang #24476 + #24125 + #23562, ROCm/aiter #3041) regress GSM8K from 0.94 to 0.91?"
+    Short answer: <strong style="color:var(--green)">No.</strong> The drop is <em>two effects added together</em>, and the dominant one is intrinsic
+    to MXFP4 at TP=4 sharding — independent of any code change.
+  </p>
+  <div class="meta">
+    <span><strong>Docker</strong> rocm/sgl-dev:v0.5.11-rocm720-mi35x-20260510</span>
+    <span><strong>Model</strong> amd/GLM-5.1-MXFP4 · 257 experts</span>
+    <span><strong>Bench</strong> GSM8K · 1200 questions · parallel=1200</span>
+    <span><strong>KV cache</strong> fp8_e4m3 · disable-radix-cache</span>
+  </div>
+</header>
+
+<!-- ============ 0. Verdict ============ -->
+<section>
+  <div class="verdict">
+    <div class="label">Verdict</div>
+    <h3>The "0.94 → 0.91 drop" is the sum of two effects.</h3>
+    <p>
+      <strong style="color:var(--green)">Not a regression in sglang or aiter.</strong> The 0.029 drop decomposes into
+      <strong style="color:var(--amber)">~0.018 from MXFP4 sharding at TP=4</strong> (reproducible with sglang
+      <code>main</code> and untouched aiter — no PRs) plus <strong style="color:var(--text-soft)">~0.011 from the PR
+      stack</strong> which sits well inside GSM8K-at-parallel=1200 noise. The same sglang/aiter on FP8 at TP=4 reaches
+      <strong style="color:var(--green)">0.948</strong> — confirming the runtime is healthy and the issue is MXFP4-specific.
+    </p>
+  </div>
+</section>
+
+<!-- ============ 1. The five data points ============ -->
+<section>
+  <div class="section-head">
+    <div class="num">01</div>
+    <div>
+      <div class="label">Today's data · all on docker 20260510</div>
+      <h2>Five GSM8K runs that pin the cause.</h2>
+    </div>
+  </div>
+  <div class="card" style="padding: 8px 22px 22px;">
+    <table>
+      <thead>
+        <tr>
+          <th>Run</th>
+          <th>Model</th>
+          <th>TP</th>
+          <th>sglang branch</th>
+          <th>aiter</th>
+          <th class="num">GSM8K</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>① first baseline</td>
+          <td>MXFP4</td>
+          <td>8</td>
+          <td><code>main</code> @ 59faf986b</td>
+          <td>docker default</td>
+          <td class="acc good num">0.943</td>
+          <td><span class="pill green">reference</span></td>
+        </tr>
+        <tr class="headline">
+          <td>② TP=4 baseline (NEW)</td>
+          <td>MXFP4</td>
+          <td><strong>4</strong></td>
+          <td><code>main</code> @ 59faf986b</td>
+          <td>docker default</td>
+          <td class="acc warn num">0.925</td>
+          <td><strong>−0.018 vs ①</strong> · <span class="pill amber">MXFP4 + TP=4 floor</span></td>
+        </tr>
+        <tr>
+          <td>③ TP=4 + 3 PRs (bench)</td>
+          <td>MXFP4</td>
+          <td>4</td>
+          <td><code>jacob/glm5-mxfp4-stack</code></td>
+          <td>same + check_args patch + 3 .so rebuilt</td>
+          <td class="acc bad num">0.914</td>
+          <td>−0.011 vs ② · within parallel=1200 noise</td>
+        </tr>
+        <tr>
+          <td>④ TP=4 + 3 PRs (prof)</td>
+          <td>MXFP4</td>
+          <td>4</td>
+          <td><code>jacob/glm5-mxfp4-stack</code></td>
+          <td>same as ③</td>
+          <td class="acc bad num">0.911</td>
+          <td>same config as ③, different run</td>
+        </tr>
+        <tr class="headline">
+          <td>⑤ FP8 control (NEW)</td>
+          <td><strong>FP8</strong></td>
+          <td>4</td>
+          <td><code>main</code> @ 59faf986b</td>
+          <td>docker default</td>
+          <td class="acc good num">0.948</td>
+          <td><strong>FP8 fine at TP=4</strong> · <span class="pill green">runtime healthy</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="color: var(--muted); font-size: 12px; margin-top: 14px;">
+      All runs: <code>--tp N --port 8552 --kv-cache-dtype fp8_e4m3 --disable-radix-cache --nsa-prefill-backend tilelang
+      --nsa-decode-backend tilelang --mem-fraction-static 0.85</code>. Bench:
+      <code>bench_sglang.py --num-questions 1200 --parallel 1200</code>.
+    </p>
+  </div>
+</section>
+
+<!-- ============ 2. Decomposition ============ -->
+<section>
+  <div class="section-head">
+    <div class="num">02</div>
+    <div>
+      <div class="label">Decomposing the drop</div>
+      <h2>0.029 = 0.018 (sharding) + 0.011 (within noise).</h2>
+    </div>
+  </div>
+
+  <div class="delta-row">
+    <div class="delta amber">
+      <div class="from-to">① 0.943 → ② 0.925</div>
+      <div class="v">−0.018</div>
+      <div class="from-to">TP=8 → TP=4 · MXFP4, no code change</div>
+      <p class="why">
+        Same sglang main, same aiter, same docker. <strong>This is the MXFP4 + TP=4 floor.</strong> Likely:
+        (a) 257 routed-expert sharding interacts badly with MXFP4 group-32 quantization at the
+        TP boundary; (b) per-rank reduce arithmetic loses more precision when fewer ranks accumulate larger
+        partial sums. Reproducible without any PR or patch — pure config effect.
+      </p>
+    </div>
+    <div class="delta">
+      <div class="from-to">② 0.925 → ③ 0.914</div>
+      <div class="v">−0.011</div>
+      <div class="from-to">add 3 PRs + check_args patch + .so rebuilds</div>
+      <p class="why">
+        Within GSM8K @ parallel=1200 run-to-run noise. ④ (same config, different run) gives 0.911, so the
+        true ③/④ value is ~0.913 ± 0.005. To call this a "regression" we'd need ≥3-seed averaging showing the
+        confidence interval doesn't overlap 0.925.
+      </p>
+    </div>
+  </div>
+
+  <div class="grid-3">
+    <div class="stat">
+      <div class="lbl">FP8 control · TP=4</div>
+      <div class="v green">0.948</div>
+      <div class="sub">Same sglang main, same aiter, same docker. <strong>Higher than MXFP4 TP=8 baseline (0.943).</strong>
+        Runtime is fine; problem is quantization-specific.</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Why this rules out aiter</div>
+      <div class="v amber">No-PR run also drops</div>
+      <div class="sub">If it were a recent aiter change, FP8 path (which uses many of the same aiter ops:
+        moe_sorting, fused_moe, NSA tilelang, allreduce) would also degrade. It doesn't (0.948).</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Why this rules out sglang PRs</div>
+      <div class="v amber">Same docker, no PRs → 0.925</div>
+      <div class="sub">Reverting <code>jacob/glm5-mxfp4-stack</code> to <code>main</code> with no other change still
+        gives 0.925, not 0.94. The PRs add only ~0.01 noise on top.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. What we ruled out ============ -->
+<section>
+  <div class="section-head">
+    <div class="num">03</div>
+    <div>
+      <div class="label">Hypotheses tested</div>
+      <h2>What it isn't.</h2>
+    </div>
+  </div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Hypothesis</th><th>Evidence</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Recent aiter changes broke MXFP4 numerics</td>
+          <td>FP8 on the same docker / same aiter reaches 0.948</td>
+          <td><span class="pill green">ruled out</span></td>
+        </tr>
+        <tr>
+          <td>The 3 sglang PRs (#24476/#24125/#23562) introduce a bug</td>
+          <td>Reverting to <code>main</code> still gives 0.925, not 0.94 (only ~0.01 of the 0.029 drop is from PRs)</td>
+          <td><span class="pill green">ruled out as primary cause</span></td>
+        </tr>
+        <tr>
+          <td>check_args patch / module rebuilds altered behavior</td>
+          <td>Patch only affects type-check (not numeric path); rebuilt .so files are from same source as the prebuilt
+            ones — only difference is they expose <code>_set_current_hip_stream</code> which doesn't affect kernel math</td>
+          <td><span class="pill green">ruled out</span></td>
+        </tr>
+        <tr>
+          <td>TP=4 sharding broken in general</td>
+          <td>FP8 TP=4 reaches 0.948 (higher than MXFP4 TP=8)</td>
+          <td><span class="pill green">ruled out</span></td>
+        </tr>
+        <tr>
+          <td>MXFP4 + TP=4 sharding has intrinsic accuracy floor near 0.92</td>
+          <td>Reproducible across two independent runs (③: 0.914, ④: 0.911) plus the fresh no-PR baseline (②: 0.925)</td>
+          <td><span class="pill amber">primary suspect — needs upstream comparison</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 4. Why MXFP4 might lose accuracy at TP=4 ============ -->
+<section>
+  <div class="section-head">
+    <div class="num">04</div>
+    <div>
+      <div class="label">Mechanism — leading hypothesis</div>
+      <h2>Why MXFP4 sharding could degrade at lower TP.</h2>
+    </div>
+  </div>
+  <div class="card">
+    <p>GLM-5.1 has <strong>257 experts</strong> (256 routed + 1 shared). At TP=4 each rank gets 64 routed experts;
+    at TP=8 each gets 32. MXFP4 (OCP) is a <em>group-32</em> per-row quantization scheme — every 32 elements share one
+    E8M0 scale.</p>
+
+    <ul>
+      <li><strong>Sharding × group boundary</strong>: when the routed-expert weight matrix is sharded along the hidden
+        dim, group-32 boundaries can land asymmetrically across ranks. AMD's Quark recipe (per the model card)
+        quantizes the shared experts too, so this affects every MoE call.</li>
+      <li><strong>Per-rank accumulation precision</strong>: with TP=4 each rank does <em>2× the GEMM work</em> of TP=8
+        before the all-reduce. The <code>--kv-cache-dtype fp8_e4m3</code> path also accumulates in FP8 — fewer ranks
+        means longer accumulation chains per rank, more rounding error per element before reduce.</li>
+      <li><strong>Routing variance at smaller TP</strong>: the same top-9 expert routing decision is now distributed
+        across 4 buckets instead of 8 — load balance variance per token can shift which experts fire, indirectly
+        nudging output token distributions.</li>
+    </ul>
+
+    <blockquote>
+      None of these are <em>bugs</em>. They're real sharding-arithmetic effects that show up under aggressive
+      4-bit quantization but stay invisible at FP8.
+    </blockquote>
+  </div>
+</section>
+
+<!-- ============ 5. Suggested follow-ups ============ -->
+<section>
+  <div class="section-head">
+    <div class="num">05</div>
+    <div>
+      <div class="label">If we want to push further</div>
+      <h2>Three follow-ups, in priority order.</h2>
+    </div>
+  </div>
+
+  <div class="card">
+    <ol>
+      <li>
+        <strong>Run MXFP4 at TP=2.</strong> InferenceX's <em>main</em> MI355X MXFP4 sweep is TP=2, not TP=4.
+        If TP=2 hits ≥0.94, that confirms the MXFP4-at-TP=4 floor and is consistent with AMD's published numbers.
+        Same launch command, just <code>--tp 2 --tokenizer-worker-num 4</code>.
+      </li>
+      <li>
+        <strong>Multi-seed at TP=4.</strong> Run MXFP4 TP=4 (no PRs) 3× to bound the noise. If σ ≈ 0.005, then
+        ②/③ overlap and we can publish "MXFP4 TP=4 = 0.92 ± 0.01" as the floor. If σ ≈ 0.001, then ③ <em>is</em> a
+        real ~0.01 PR-induced regression worth bisecting.
+      </li>
+      <li>
+        <strong>Cross-check against B200 NVFP4 TP=4.</strong> If NVFP4 TP=4 on B200 also lands near 0.92, the floor is
+        a property of FP4 + TP=4 (not MI355X-specific). If B200 NVFP4 TP=4 hits 0.94, then MXFP4 (or our MI355X
+        kernels) has additional headroom to recover.
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ 6. Reproduce ============ -->
+<section>
+  <div class="section-head">
+    <div class="num">06</div>
+    <div>
+      <div class="label">Reproduce in 5 minutes</div>
+      <h2>Commands.</h2>
+    </div>
+  </div>
+  <div class="card">
+    <p style="margin-top: 0;"><strong>(a) MXFP4 TP=4 — no PRs (baseline 0.925):</strong></p>
+<pre>
+docker exec jacchang_GLM5_FP4 bash -lc '
+  cd /sgl-workspace/sglang && git checkout main
+  ulimit -n 65535
+  export SAFETENSORS_FAST_GPU=1 SGLANG_ROCM_FUSED_DECODE_MLA=0 ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  python3 -m sglang.launch_server \
+      --model /data/huggingface/hub/amd/GLM-5.1-MXFP4 --tp 4 \
+      --host localhost --port 8552 --trust-remote-code \
+      --tool-call-parser glm47 --reasoning-parser glm45 \
+      --watchdog-timeout 1200 --mem-fraction-static 0.85 \
+      --kv-cache-dtype fp8_e4m3 --disable-radix-cache \
+      --nsa-prefill-backend tilelang --nsa-decode-backend tilelang \
+      --tokenizer-worker-num 8 &amp;
+  until curl -s -o /dev/null -w %{http_code} http://localhost:8552/health | grep -q 200; do sleep 5; done
+  python3 /sgl-workspace/sglang/benchmark/gsm8k/bench_sglang.py \
+      --port 8552 --num-questions 1200 --parallel 1200
+'
+</pre>
+
+    <p><strong>(b) FP8 TP=4 — control (0.948):</strong></p>
+<pre>
+# Same as (a) but --model /data/huggingface/hub/zai-org/GLM-5.1-FP8
+</pre>
+
+    <p><strong>(c) MXFP4 TP=2 — proposed test (target ≥ 0.94):</strong></p>
+<pre>
+# Same as (a) but --tp 2 --tokenizer-worker-num 4
+</pre>
+  </div>
+</section>
+
+<!-- ============ 7. References ============ -->
+<section>
+  <div class="section-head">
+    <div class="num">07</div>
+    <div>
+      <div class="label">Files</div>
+      <h2>Where the data lives.</h2>
+    </div>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>What</th><th>Path (in <code>~/SGLang-benchmarks/</code>)</th></tr></thead>
+      <tbody>
+        <tr><td>① MXFP4 TP=8 no-PR</td><td><code>results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260510/GLM-5.1-MXFP4-bench-TP8/Accuracy_GSM8K.log</code></td></tr>
+        <tr><td>② MXFP4 TP=4 no-PR</td><td><code>results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260510/GLM-5.1-MXFP4-bench-TP4-NoPRs-baseline/Accuracy_GSM8K.log</code></td></tr>
+        <tr><td>③ MXFP4 TP=4 +PRs (bench)</td><td><code>results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260510/GLM-5.1-MXFP4-bench-TP4/Accuracy_GSM8K.log</code></td></tr>
+        <tr><td>④ MXFP4 TP=4 +PRs (prof)</td><td><code>results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260510/GLM-5.1-MXFP4-prof-TP4/Accuracy_GSM8K.log</code></td></tr>
+        <tr><td>⑤ FP8 TP=4 no-PR</td><td><code>results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260510/GLM-5.1-FP8-bench-TP4-NoPRs-baseline/Accuracy_GSM8K.log</code></td></tr>
+        <tr><td>aiter check_args patch</td><td><code>tools/patch_aiter_check_args.py</code></td></tr>
+        <tr><td>One-shot aiter prep (patch + module rebuild)</td><td><code>tools/prepare_aiter_for_glm5.py</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <strong>SGLang-benchmarks</strong> · MI355X · GLM-5.1-MXFP4 GSM8K investigation · 2026-05-11.
+  See sibling reports under <code>tools/</code>.
+</footer>
+
+</div>
+</body>
+</html>

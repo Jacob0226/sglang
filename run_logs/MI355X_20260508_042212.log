@@ -1,0 +1,2965 @@
++ ulimit -n 65535
++ sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'
++ MODEL_PRESET=deepseek-r1-0528
++ MODEL_PATH=
++ CACHE_MODE=hicache
++ BENCH_MODE=multiturn
++ SWEEP_MODES=false
++ TP_SIZE=8
++ PORT=30000
++ HOST=localhost
++ USER_TAG=
++ DOCKER=untagged-docker
++ DATASET_PATH=
++ USE_NUMA_INTERLEAVE=true
++ HICACHE_SIZE=auto
++ HICACHE_SIZE_SWEEP='64 128 256'
++ NUM_CLIENTS=80
++ NUM_ROUNDS=10
++ REQUEST_LENGTH=2048
++ OUTPUT_LENGTH=1
++ MAX_PARALLEL=4
++ REQUEST_RATE=16
++ DISABLE_AUTO_RUN=true
++ ENABLE_ROUND_BARRIER=true
++ RAND_ISL_LIST='32768 65536'
++ RAND_OSL=2048
++ RAND_NUM_PROMPTS=4
++ RAND_CONCURRENCY=1
++ RAND_WARMUP=2
++ [[ 5 -gt 0 ]]
++ case $1 in
++ SWEEP_MODES=true
++ shift 1
++ [[ 4 -gt 0 ]]
++ case $1 in
++ USER_TAG=-MI355X
++ shift 2
++ [[ 2 -gt 0 ]]
++ case $1 in
++ DOCKER=rocm/sgl-dev:v0.5.11-rocm720-mi35x-20260507
++ shift 2
++ [[ 0 -gt 0 ]]
++ case "$MODEL_PRESET" in
++ '[' -z '' ']'
++ MODEL_PATH=/data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528
++ REASONING_PARSER=deepseek-r1
++ TOOL_CALL_PARSER=
++ MODEL_FAMILY=deepseek
+++ basename /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528
++ MODEL_NAME=DeepSeek-R1-0528
++ [[ /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 == /* ]]
++ '[' '!' -d /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 ']'
+++ awk '/^MemAvailable:/ {print int($2/1024/1024)}' /proc/meminfo
++ MEM_AVAIL_GB=2954
++ HOST_HEADROOM_GB=400
++ USABLE_HOST_GB=2554
++ '[' -n '64 128 256' ']'
++ echo '>>> --hicache-size-sweep: '\''64 128 256'\'' GB per rank' '(each value runs once per hicache_* mode; sizes that don'\''t fit' 'in MemAvailable=2954 GB minus 400 GB' 'headroom across TP=8 ranks will be skipped)'
+>>> --hicache-size-sweep: '64 128 256' GB per rank (each value runs once per hicache_* mode; sizes that don't fit in MemAvailable=2954 GB minus 400 GB headroom across TP=8 ranks will be skipped)
+++ echo rocm/sgl-dev:v0.5.11-rocm720-mi35x-20260507
+++ sed 's/\//_/g; s/:/-/g'
++ DOCKER_FILENAME=rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507
++ BASE_LOG_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X
++ mkdir -p /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X
+++ detect_numa_nodes
+++ ls -d /sys/devices/system/node/node0 /sys/devices/system/node/node1
+++ sed 's|.*/node||'
+++ sort -n
+++ paste -sd,
++ NUMA_NODES=0,1
++ NUMACTL_PREFIX=()
++ '[' true = true ']'
++ command -v numactl
++ '[' -z 0,1 ']'
++ [[ 0,1 != *,* ]]
++ NUMACTL_PREFIX=(numactl --interleave="$NUMA_NODES")
++ echo '>>> NUMA interleave: --interleave=0,1 (0 + 1 nodes)'
+>>> NUMA interleave: --interleave=0,1 (0 + 1 nodes)
++ '[' true = true ']'
++ CACHE_MODES=("no_radix" "radix" "hicache" "hicache_file")
++ '[' -n '64 128 256' ']'
++ SIZE_LIST=($HICACHE_SIZE_SWEEP)
++ SKIPPED_LOG=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X/skipped.log
++ :
++ for cm in "${CACHE_MODES[@]}"
++ [[ no_radix == hicache* ]]
++ sizes_to_run=("_unused_")
++ for sz in "${sizes_to_run[@]}"
++ '[' _unused_ '!=' _unused_ ']'
++ LOG_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X/no_radix
++ banner_size=
+================================================================
+>>> [HiCache.sh] cache_mode=no_radix  bench=multiturn  model=DeepSeek-R1-0528
+================================================================
++ echo ================================================================
++ echo '>>> [HiCache.sh] cache_mode=no_radix  bench=multiturn  model=DeepSeek-R1-0528'
++ echo ================================================================
++ run_one no_radix
++ local cache_mode=no_radix
++ mkdir -p /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X/no_radix
++ '[' multiturn = multiturn ']'
++ export SGLANG_TORCH_PROFILER_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X/no_radix
++ SGLANG_TORCH_PROFILER_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X/no_radix
++ snapshot_host_info /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X/no_radix/host_info.log
++ local logfile=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X/no_radix/host_info.log
++ tee /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X/no_radix/host_info.log
+++ date '+%F %T %Z'
++ echo '=== HiCache.sh host snapshot @ 2026-05-08 04:22:12 UTC ==='
++ echo
++ echo '--- lscpu ---'
+=== HiCache.sh host snapshot @ 2026-05-08 04:22:12 UTC ===
+
+--- lscpu ---
++ lscpu
++ grep -E 'Architecture|Vendor|Model name|CPU\(s\)|Socket|Core|Thread|NUMA'
+Architecture:                            x86_64
+CPU(s):                                  256
+On-line CPU(s) list:                     0-255
+Vendor ID:                               AuthenticAMD
+BIOS Vendor ID:                          Advanced Micro Devices, Inc.
+Model name:                              AMD EPYC 9575F 64-Core Processor
+BIOS Model name:                         AMD EPYC 9575F 64-Core Processor               
+Thread(s) per core:                      2
+Core(s) per socket:                      64
+Socket(s):                               2
+NUMA node(s):                            2
+NUMA node0 CPU(s):                       0-63,128-191
+NUMA node1 CPU(s):                       64-127,192-255
++ echo
++ echo '--- /proc/meminfo (selected) ---'
++ grep -E '^MemTotal:|^MemAvailable:|^MemFree:|^Cached:|^Buffers:|^Dirty:|^HugePages_Total' /proc/meminfo
+
+--- /proc/meminfo (selected) ---
+MemTotal:       3170254604 kB
+MemFree:        2176309320 kB
+MemAvailable:   3098012900 kB
+Buffers:          803700 kB
+Cached:         909935168 kB
+Dirty:                92 kB
+HugePages_Total:       0
+
+--- NUMA per-node DRAM + CPU list ---
++ echo
++ echo '--- NUMA per-node DRAM + CPU list ---'
++ for n in /sys/devices/system/node/node[0-9]*
++ '[' -d /sys/devices/system/node/node0 ']'
++ local nid mem cpus
+++ basename /sys/devices/system/node/node0
+++ sed s/node//
++ nid=0
+++ awk '/MemTotal/{print int($4/1024/1024)" GB"}' /sys/devices/system/node/node0/meminfo
++ mem='1511 GB'
+++ cat /sys/devices/system/node/node0/cpulist
++ cpus=0-63,128-191
++ printf '  node %s: DRAM=%s, CPUs=%s\n' 0 '1511 GB' 0-63,128-191
++ for n in /sys/devices/system/node/node[0-9]*
++ '[' -d /sys/devices/system/node/node1 ']'
++ local nid mem cpus
+  node 0: DRAM=1511 GB, CPUs=0-63,128-191
+++ basename /sys/devices/system/node/node1
+++ sed s/node//
++ nid=1
+++ awk '/MemTotal/{print int($4/1024/1024)" GB"}' /sys/devices/system/node/node1/meminfo
++ mem='1511 GB'
+++ cat /sys/devices/system/node/node1/cpulist
++ cpus=64-127,192-255
++ printf '  node %s: DRAM=%s, CPUs=%s\n' 1 '1511 GB' 64-127,192-255
++ echo
++ echo '--- GPU → NUMA node (via PCIe sysfs, vendor-agnostic) ---'
+  node 1: DRAM=1511 GB, CPUs=64-127,192-255
+
+--- GPU → NUMA node (via PCIe sysfs, vendor-agnostic) ---
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:14.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:14.0/class
++ c=0x0c0500
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:14.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:14.3/class
++ c=0x060100
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.1/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.2/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.3/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.4/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.4/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.5/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.5/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.6/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.6/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.7/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.7/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.1/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.2/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.3/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.4/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.4/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.5/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.5/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.6/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.6/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.7/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.7/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:01:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:01:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:02:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:02:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:02:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:02:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:02:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:02:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:02:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:02:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:03:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:03:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:04:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:04:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:05:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:05:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:06:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:06:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:07:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:07:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:08:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:08:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:09:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:09:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0a:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:0a:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:0a:00.0
++ bdf=0000:0a:00.0
+++ cat /sys/bus/pci/devices/0000:0a:00.0/numa_node
++ n=0
++ printf '  %s  %-9s  NUMA %s\n' 0000:0a:00.0 AMD-CDNA 0
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+  0000:0a:00.0  AMD-CDNA   NUMA 0
+++ cat /sys/bus/pci/devices/0000:0b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0c:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0c:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0c:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0c:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0c:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0c:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:10:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:10:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:11:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:11:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:12:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:12:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:14:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:14:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1a:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1b:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1b:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1b:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1b:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1b:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1b:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1d:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1d:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1e:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:1e:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1f:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1f:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:20:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:20:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:21:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:21:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:22:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:22:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:23:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:23:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:23:00.0
++ bdf=0000:23:00.0
+++ cat /sys/bus/pci/devices/0000:23:00.0/numa_node
++ n=0
++ printf '  %s  %-9s  NUMA %s\n' 0000:23:00.0 AMD-CDNA 0
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+  0000:23:00.0  AMD-CDNA   NUMA 0
+++ cat /sys/bus/pci/devices/0000:24:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:24:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:25:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:25:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:25:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:25:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:25:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:25:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:25:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:25:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:29:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:29:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:2a:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:2a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:2b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:2b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:32:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:32:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:32:00.4/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:32:00.4/class
++ c=0x0c0330
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:01.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:01.2/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:38:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:38:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:38:00.1/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:38:00.1/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:39:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:39:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3a:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3a:01.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3a:01.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3a:02.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3a:02.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3b:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3b:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3c:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3c:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3d:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3d:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:42:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:42:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:42:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:42:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:42:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:42:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:03.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:03.3/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:48:00.0/vendor
++ v=0x1a03
+++ cat /sys/bus/pci/devices/0000:48:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:49:00.0/vendor
++ v=0x1a03
+++ cat /sys/bus/pci/devices/0000:49:00.0/class
++ c=0x030000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:4a:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:4a:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:4a:00.5/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:4a:00.5/class
++ c=0x108000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:51:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:51:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:52:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:52:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:52:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:52:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:52:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:52:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:52:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:52:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:53:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:53:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:54:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:54:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:55:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:55:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:56:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:56:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:57:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:57:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:58:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:58:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:59:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:59:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5a:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:5a:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:5a:00.0
++ bdf=0000:5a:00.0
+++ cat /sys/bus/pci/devices/0000:5a:00.0/numa_node
++ n=0
++ printf '  %s  %-9s  NUMA %s\n' 0000:5a:00.0 AMD-CDNA 0
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+  0000:5a:00.0  AMD-CDNA   NUMA 0
+++ cat /sys/bus/pci/devices/0000:5b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5c:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5c:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5c:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5c:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5c:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5c:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:60:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:60:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:61:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:61:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:62:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:62:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:69:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:69:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6a:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6a:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6a:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6a:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6a:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6a:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6a:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6c:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6c:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6d:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:6d:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6e:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6e:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6f:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6f:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:70:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:70:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:71:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:71:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:72:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:72:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:72:00.0
++ bdf=0000:72:00.0
+++ cat /sys/bus/pci/devices/0000:72:00.0/numa_node
++ n=0
++ printf '  %s  %-9s  NUMA %s\n' 0000:72:00.0 AMD-CDNA 0
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+  0000:72:00.0  AMD-CDNA   NUMA 0
+++ cat /sys/bus/pci/devices/0000:73:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:73:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:74:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:74:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:74:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:74:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:74:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:74:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:74:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:74:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:78:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:78:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:79:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:79:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:7a:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:7a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:7c:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:7c:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:7c:00.4/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:7c:00.4/class
++ c=0x0c0330
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:82:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:82:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:83:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:83:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:83:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:83:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:83:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:83:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:83:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:83:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:84:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:84:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:85:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:85:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:86:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:86:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:87:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:87:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:88:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:88:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:89:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:89:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8a:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:8a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8b:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:8b:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:8b:00.0
++ bdf=0000:8b:00.0
+++ cat /sys/bus/pci/devices/0000:8b:00.0/numa_node
++ n=1
++ printf '  %s  %-9s  NUMA %s\n' 0000:8b:00.0 AMD-CDNA 1
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+  0000:8b:00.0  AMD-CDNA   NUMA 1
+++ cat /sys/bus/pci/devices/0000:8c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8d:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8d:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8d:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8d:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8d:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8d:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8d:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8d:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:91:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:91:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:92:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:92:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:93:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:93:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:95:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:95:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9c:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9c:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9c:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9c:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9c:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9c:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9d:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9d:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9e:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9e:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9f:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:9f:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a0:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a1:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a1:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a2:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:a2:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a3:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:a3:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a4:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:a4:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:a4:00.0
++ bdf=0000:a4:00.0
+++ cat /sys/bus/pci/devices/0000:a4:00.0/numa_node
++ n=1
++ printf '  %s  %-9s  NUMA %s\n' 0000:a4:00.0 AMD-CDNA 1
++ for d in /sys/bus/pci/devices/*
+  0000:a4:00.0  AMD-CDNA   NUMA 1
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a5:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a5:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a6:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a6:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a6:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a6:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a6:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a6:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a6:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a6:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:aa:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:aa:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ab:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ab:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ac:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ac:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b3:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b3:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b8:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b8:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b8:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b8:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b8:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b8:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:01.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:01.2/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:be:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:be:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:be:00.1/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:be:00.1/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bf:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:bf:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c0:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c0:01.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c0:01.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c0:02.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c0:02.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c1:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c1:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c2:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c2:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c3:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c3:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c9:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c9:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c9:00.5/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c9:00.5/class
++ c=0x108000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d0:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d1:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d1:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d1:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d1:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d1:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d1:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d1:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d1:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d2:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d2:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d3:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d3:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d4:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:d4:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d5:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d5:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d6:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d6:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d7:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:d7:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d8:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:d8:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d9:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:d9:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:d9:00.0
++ bdf=0000:d9:00.0
+++ cat /sys/bus/pci/devices/0000:d9:00.0/numa_node
++ n=1
++ printf '  %s  %-9s  NUMA %s\n' 0000:d9:00.0 AMD-CDNA 1
++ for d in /sys/bus/pci/devices/*
+  0000:d9:00.0  AMD-CDNA   NUMA 1
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:da:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:da:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:db:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:db:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:db:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:db:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:db:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:db:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:db:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:db:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:df:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:df:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e0:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e1:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e1:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:07.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:07.2/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e8:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e8:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e9:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e9:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e9:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e9:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e9:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e9:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e9:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e9:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ea:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ea:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:eb:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:eb:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ec:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:ec:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ed:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ed:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ee:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ee:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ef:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:ef:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f0:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:f0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f1:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:f1:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:f1:00.0
++ bdf=0000:f1:00.0
+++ cat /sys/bus/pci/devices/0000:f1:00.0/numa_node
++ n=1
++ printf '  %s  %-9s  NUMA %s\n' 0000:f1:00.0 AMD-CDNA 1
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+  0000:f1:00.0  AMD-CDNA   NUMA 1
+++ cat /sys/bus/pci/devices/0000:f2:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f2:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f3:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f3:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f3:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f3:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f3:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f3:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f3:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f3:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f7:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:f7:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f8:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f8:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f9:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f9:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:fb:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:fb:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:fc:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:fc:00.0/class
++ c=0x010601
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:fc:00.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:fc:00.1/class
++ c=0x010601
++ case "$v:$c" in
++ continue
++ echo
+
+--- vendor-specific topology ---
++ echo '--- vendor-specific topology ---'
++ command -v nvidia-smi
++ command -v rocm-smi
++ echo '  [rocm-smi --showtopo --showtoponuma]'
+  [rocm-smi --showtopo --showtoponuma]
++ rocm-smi --showtopo --showtoponuma
++ sed 's/^/    /'
++ head -30
+    WARNING: AMD GPU device(s) is/are in a low-power state. Check power control/runtime_status
+    
+    
+    
+    ============================ ROCm System Management Interface ============================
+    ================================ Weight between two GPUs =================================
+           GPU0         GPU1         GPU2         GPU3         GPU4         GPU5         GPU6         GPU7         
+    GPU0   0            15           15           15           15           15           15           15           
+    GPU1   15           0            15           15           15           15           15           15           
+    GPU2   15           15           0            15           15           15           15           15           
+    GPU3   15           15           15           0            15           15           15           15           
+    GPU4   15           15           15           15           0            15           15           15           
+    GPU5   15           15           15           15           15           0            15           15           
+    GPU6   15           15           15           15           15           15           0            15           
+    GPU7   15           15           15           15           15           15           15           0            
+    
+    ================================= Hops between two GPUs ==================================
+           GPU0         GPU1         GPU2         GPU3         GPU4         GPU5         GPU6         GPU7         
+    GPU0   0            1            1            1            1            1            1            1            
+    GPU1   1            0            1            1            1            1            1            1            
+    GPU2   1            1            0            1            1            1            1            1            
+    GPU3   1            1            1            0            1            1            1            1            
+    GPU4   1            1            1            1            0            1            1            1            
+    GPU5   1            1            1            1            1            0            1            1            
+    GPU6   1            1            1            1            1            1            0            1            
+    GPU7   1            1            1            1            1            1            1            0            
+    
+    =============================== Link Type between two GPUs ===============================
+           GPU0         GPU1         GPU2         GPU3         GPU4         GPU5         GPU6         GPU7         
+    GPU0   0            XGMI         XGMI         XGMI         XGMI         XGMI         XGMI         XGMI         

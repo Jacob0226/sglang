@@ -1,0 +1,159 @@
+--- a/python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py	2026-04-16 09:49:58.427778691 +0000
++++ b/python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py	2026-04-16 09:49:58.413776871 +0000
+@@ -336,8 +336,9 @@
+             ):
+                 q_pe, k_pe = self.rotary_emb(positions, q_pe, k_pe)
+ 
+-        if _attn_overlap_join is not None:
+-            _attn_overlap_join[0].wait_stream(_attn_overlap_join[1])
++        # HIP only (Proposal D): do NOT join here — pass the pending join
++        # to forward_absorb_core so cat/fused ops also overlap with indexer.
++        # On CUDA _attn_overlap_join is always None, so this is a no-op.
+ 
+         if nsa_use_prefill_cp(forward_batch):
+             # support allgather+rerrange
+@@ -355,6 +356,7 @@
+             positions,
+             topk_indices,
+             llama_4_scaling,
++            _attn_overlap_join,
+         )
+ 
+     def forward_absorb_core(
+@@ -368,9 +370,19 @@
+         positions,
+         topk_indices,
+         llama_4_scaling,
++        _attn_overlap_join=None,
+     ):
+         save_kv_cache = True
+ 
++        # HIP only: when _attn_overlap_join is set, run pre-attention ops
++        # (cat/fused) on alt_stream to overlap with indexer, then join before
++        # attn_mqa.  On CUDA _attn_overlap_join is always None → no-op.
++        _pre_attn_ctx = (
++            torch.cuda.stream(_attn_overlap_join[1])
++            if _attn_overlap_join is not None
++            else contextlib.nullcontext()
++        )
++
+         if self.current_attention_backend in FORWARD_ABSORB_CORE_ATTENTION_BACKENDS:
+             if self._skip_rope_for_nsa_tilelang_fused() and self.rotary_emb is not None:
+                 cos = self.rotary_emb.cos_cache
+@@ -378,27 +390,30 @@
+                 kv_cache_dtype = (
+                     fp8_dtype if self.kv_cache_dtype == "fp8_e4m3" else q_nope_out.dtype
+                 )
+-                q_cat, _, k_pe_fused, _ = fused_qk_rope_cat_and_cache_mla(
+-                    q_nope_out,
+-                    q_pe,
+-                    k_nope,
+-                    k_pe,
+-                    forward_batch.token_to_kv_pool.get_key_buffer(
+-                        self.attn_mqa.layer_id
+-                    ),
+-                    forward_batch.out_cache_loc,
+-                    positions,
+-                    cos,
+-                    sin,
+-                    self.attn_mqa.k_scale,
+-                    self.rotary_emb.is_neox_style,
+-                    q_out_dtype=kv_cache_dtype,
+-                )
+-                q_nope_fused = q_cat[..., : self.kv_lora_rank]
+-                q_pe_fused = q_cat[..., self.kv_lora_rank :]
+-                save_kv_cache = False
+-                if llama_4_scaling is not None:
+-                    q_nope_fused *= llama_4_scaling
++                with _pre_attn_ctx:
++                    q_cat, _, k_pe_fused, _ = fused_qk_rope_cat_and_cache_mla(
++                        q_nope_out,
++                        q_pe,
++                        k_nope,
++                        k_pe,
++                        forward_batch.token_to_kv_pool.get_key_buffer(
++                            self.attn_mqa.layer_id
++                        ),
++                        forward_batch.out_cache_loc,
++                        positions,
++                        cos,
++                        sin,
++                        self.attn_mqa.k_scale,
++                        self.rotary_emb.is_neox_style,
++                        q_out_dtype=kv_cache_dtype,
++                    )
++                    q_nope_fused = q_cat[..., : self.kv_lora_rank]
++                    q_pe_fused = q_cat[..., self.kv_lora_rank :]
++                    save_kv_cache = False
++                    if llama_4_scaling is not None:
++                        q_nope_fused *= llama_4_scaling
++                if _attn_overlap_join is not None:
++                    _attn_overlap_join[0].wait_stream(_attn_overlap_join[1])
+                 attn_output = self.attn_mqa(
+                     q_nope_fused,
+                     None,
+@@ -421,6 +436,8 @@
+                         "is_neox": self.rotary_emb.is_neox_style,
+                         "llama_4_scaling": llama_4_scaling,
+                     }
++                if _attn_overlap_join is not None:
++                    _attn_overlap_join[0].wait_stream(_attn_overlap_join[1])
+                 attn_output = self.attn_mqa(
+                     q_nope_out,
+                     k_nope,
+@@ -444,32 +461,36 @@
+                     fp8_dtype if self.kv_cache_dtype == "fp8_e4m3" else q_nope_out.dtype
+                 )
+ 
+-                q, _, _, k = fused_qk_rope_cat_and_cache_mla(
+-                    q_nope_out,
+-                    q_pe,
+-                    k_nope,
+-                    k_pe,
+-                    forward_batch.token_to_kv_pool.get_key_buffer(
+-                        self.attn_mqa.layer_id
+-                    ),
+-                    forward_batch.out_cache_loc,
+-                    positions,
+-                    cos,
+-                    sin,
+-                    self.attn_mqa.k_scale,
+-                    self.rotary_emb.is_neox_style,
+-                    q_out_dtype=kv_cache_dtype,
+-                )
++                with _pre_attn_ctx:
++                    q, _, _, k = fused_qk_rope_cat_and_cache_mla(
++                        q_nope_out,
++                        q_pe,
++                        k_nope,
++                        k_pe,
++                        forward_batch.token_to_kv_pool.get_key_buffer(
++                            self.attn_mqa.layer_id
++                        ),
++                        forward_batch.out_cache_loc,
++                        positions,
++                        cos,
++                        sin,
++                        self.attn_mqa.k_scale,
++                        self.rotary_emb.is_neox_style,
++                        q_out_dtype=kv_cache_dtype,
++                    )
+ 
+-                save_kv_cache = False
++                    save_kv_cache = False
+             else:
+-                q = torch.cat([q_nope_out, q_pe], dim=-1)
+-                k = torch.cat([k_nope, k_pe], dim=-1)
++                with _pre_attn_ctx:
++                    q = torch.cat([q_nope_out, q_pe], dim=-1)
++                    k = torch.cat([k_nope, k_pe], dim=-1)
+ 
+             # Apply llama 4 scaling if provided
+             if llama_4_scaling is not None:
+                 q *= llama_4_scaling
+ 
++            if _attn_overlap_join is not None:
++                _attn_overlap_join[0].wait_stream(_attn_overlap_join[1])
+             attn_output = self.attn_mqa(
+                 q,
+                 k,

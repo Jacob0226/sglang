@@ -1,0 +1,37 @@
+diff --git a/aiter/jit/core.py b/aiter/jit/core.py
+index 0f2f20d1f..fbbfda708 100644
+--- a/aiter/jit/core.py
++++ b/aiter/jit/core.py
+@@ -1527,8 +1527,22 @@ def compile_ops(
+                             origin = typing.get_origin(expected_type)
+                             sub_t = typing.get_args(expected_type)
+ 
++                            # PATCH: in develop=True mode, args are converted torch.Tensor->aiter_tensor_t
++                            # BEFORE check_args runs. Treat them as interchangeable here.
++                            def _matches(arg, expected):
++                                if isinstance(arg, expected):
++                                    return True
++                                if expected is torch.Tensor and aiter_tensor_t is not object and isinstance(arg, aiter_tensor_t):
++                                    return True
++                                return False
++                            def _matches_tuple(arg, types_tuple):
++                                if isinstance(arg, types_tuple):
++                                    return True
++                                if torch.Tensor in types_tuple and aiter_tensor_t is not object and isinstance(arg, aiter_tensor_t):
++                                    return True
++                                return False
+                             if origin is None:
+-                                if not isinstance(arg, expected_type) and not (
++                                if not _matches(arg, expected_type) and not (
+                                     any(el in str(expected_type) for el in enum_types)
+                                     and isinstance(arg, int)
+                                 ):
+@@ -1541,7 +1555,7 @@ def compile_ops(
+                                         f"{loadName}: {el} needs to be List[{sub_t}] but got {arg}"
+                                     )
+                             elif origin is typing.Union or origin is types.UnionType:
+-                                if arg is not None and not isinstance(arg, sub_t):
++                                if arg is not None and not _matches_tuple(arg, sub_t):
+                                     raise TypeError(
+                                         f"{loadName}: {el} needs to be Optional[{sub_t}] but got {arg}"
+                                     )

@@ -1,0 +1,4006 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>GLM-5-FP8 NSA decode · Dual-stream regression on MI355X</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #0d0e10;
+    --ink-2: #14161c;
+    --surface: #181a22;
+    --surface-2: #1f222c;
+    --rule: #2a2d38;
+    --rule-soft: #20232c;
+    --text: #e8e6e3;
+    --text-soft: #b8b6b2;
+    --muted: #72757e;
+    --amber: #f5a623;
+    --amber-soft: #f5a62322;
+    --green: #6ee7b7;
+    --green-soft: #6ee7b71f;
+    --rose: #ff7b72;
+    --rose-bright: #ff5252;
+    --azure: #79c0ff;
+    --gold: #ffd166;
+    --indigo: #7e6ee8;
+    --display: 'Bricolage Grotesque', system-ui;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --serif: 'Newsreader', Georgia, serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--mono);
+    color: var(--text);
+    background:
+      radial-gradient(1100px 600px at 80% -10%, #1a1d27 0%, transparent 60%),
+      radial-gradient(900px 500px at -10% 30%, #161620 0%, transparent 55%),
+      radial-gradient(1200px 700px at 120% 110%, #1a1620 0%, transparent 55%),
+      var(--ink);
+    line-height: 1.55;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      repeating-linear-gradient(0deg,
+        rgba(255,255,255,0.018) 0px,
+        rgba(255,255,255,0.018) 1px,
+        transparent 1px,
+        transparent 3px);
+    mix-blend-mode: overlay;
+    z-index: 0;
+  }
+  main { position: relative; z-index: 1; max-width: 1700px; margin: 0 auto; padding: 56px 24px 96px; }
+
+  /* meta strip */
+  .meta-strip {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 24px;
+    padding: 14px 22px;
+    border: 1px solid var(--rule);
+    background: linear-gradient(180deg, rgba(245,82,82,0.05), transparent 70%), var(--surface);
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text-soft);
+    animation: fade-down .6s ease both;
+  }
+  .meta-strip .ttl {
+    font-family: var(--display);
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+  .meta-strip .ttl span { color: var(--rose-bright); }
+  .meta-strip .meta-cell { display: flex; gap: 8px; align-items: baseline; }
+  .meta-strip .meta-cell b { color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: 0.18em; font-weight: 400; }
+  .meta-strip code { color: var(--text); font-size: 12px; }
+
+  /* hero */
+  .hero { margin: 56px 0 56px; display: grid; grid-template-columns: 1.3fr 1fr; gap: 44px; align-items: end; animation: fade-up .8s .1s ease both; }
+  .hero h1 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(34px, 4.4vw, 58px);
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    margin: 0;
+  }
+  .hero h1 .red { color: var(--rose-bright); font-style: italic; font-family: var(--serif); font-weight: 600; }
+  .hero h1 .accent { color: var(--green); }
+  .hero .kicker {
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--rose-bright);
+    margin: 0 0 16px;
+  }
+  .hero .pull {
+    border-left: 2px solid var(--rose-bright);
+    padding: 6px 0 6px 22px;
+    margin: 0;
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 20px;
+    line-height: 1.5;
+    color: var(--text-soft);
+  }
+  .hero .pull em { color: var(--rose-bright); font-style: normal; font-family: var(--mono); font-size: 17px; padding: 0 2px; font-weight: 500; }
+  .hero .pull span.green { color: var(--green); font-style: normal; font-family: var(--mono); font-size: 17px; padding: 0 2px; }
+
+  /* sections */
+  .section { margin: 80px 0 0; }
+  .section-head {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 28px;
+    align-items: baseline;
+    border-top: 1px solid var(--rule);
+    padding-top: 22px;
+    margin-bottom: 24px;
+  }
+  .section-head .num {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 56px;
+    line-height: 1;
+    color: var(--rose-bright);
+    letter-spacing: -0.04em;
+    transform: translateY(-6px);
+  }
+  .section-head .label { font-size: 10px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--muted); }
+  .section-head h2 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 30px;
+    margin: 4px 0 0;
+    letter-spacing: -0.015em;
+  }
+
+  /* Bench / per-block cards */
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-top: 8px;
+  }
+  .sum-card {
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 18px 18px 16px;
+    background: linear-gradient(180deg, rgba(255,82,82,0.04), transparent 60%), var(--surface);
+  }
+  .sum-card .lbl { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+  .sum-card .val {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 30px;
+    line-height: 1;
+    margin: 8px 0 4px;
+    letter-spacing: -0.02em;
+    color: var(--rose-bright);
+  }
+  .sum-card .val.amber { color: var(--amber); }
+  .sum-card .val.green { color: var(--green); }
+  .sum-card .val.gold { color: var(--gold); }
+  .sum-card .sub { font-size: 11px; color: var(--text-soft); margin-top: 4px; }
+  .sum-card .delta { font-size: 11px; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--rule); }
+
+  /* timeline */
+  .timeline-wrap {
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--surface);
+    padding: 22px 28px 28px;
+    margin-top: 8px;
+    overflow-x: auto;
+  }
+  .timeline-wrap::-webkit-scrollbar {
+    height: 12px;
+    background: var(--ink-2);
+  }
+  .timeline-wrap::-webkit-scrollbar-thumb {
+    background: var(--rule);
+    border-radius: 6px;
+  }
+  .timeline-wrap::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
+  }
+  .zoom-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed var(--rule);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--text-soft);
+  }
+  .zoom-bar .zoom-label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.18em; font-size: 10px; margin-right: 6px; }
+  .zoom-bar button {
+    background: var(--ink-2);
+    border: 1px solid var(--rule);
+    color: var(--text-soft);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.1s ease;
+  }
+  .zoom-bar button:hover { border-color: var(--muted); color: var(--text); }
+  .zoom-bar button.active {
+    background: var(--surface-2);
+    border-color: var(--rose-bright);
+    color: var(--rose-bright);
+    font-weight: 500;
+  }
+  .zoom-bar .hint { margin-left: auto; color: var(--muted); }
+  .timeline-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    margin-bottom: 14px;
+    gap: 20px;
+  }
+  .timeline-head h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 18px;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .timeline-head p { margin: 4px 0 0; font-size: 12px; color: var(--text-soft); }
+  .timeline-axis-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--rule);
+    font-size: 11px;
+    color: var(--text-soft);
+  }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .legend .swatch { display: inline-block; width: 14px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,0,0,0.3); }
+  .legend .swatch.bubble {
+    background: var(--rose-bright);
+    background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.35) 0 2px, transparent 2px 5px);
+  }
+  svg .timeline-bg { fill: var(--ink-2); }
+  svg .stream-rule { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 3 3; }
+  svg .axis-tick { stroke: var(--rule); stroke-width: 1; }
+  svg .axis-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+  svg .row-label { fill: var(--text); font-family: 'Bricolage Grotesque'; font-weight: 600; font-size: 12px; letter-spacing: 0.04em; }
+  svg .row-sub { fill: var(--muted); font-family: var(--mono); font-size: 9.5px; }
+  svg .kernel-rect { stroke: rgba(0,0,0,0.35); stroke-width: 0.6; }
+  svg .kernel-rect:hover { stroke: var(--text); stroke-width: 1.2; }
+  svg .ar-highlight { fill: none; stroke: var(--amber); stroke-width: 2.5; stroke-dasharray: 4 3; }
+  svg .bubble-rect { fill: var(--rose-bright); fill-opacity: 0.7; stroke: var(--rose-bright); stroke-width: 2; }
+  svg .bubble-label { fill: var(--rose-bright); font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.04em; }
+  svg .ar-text { fill: var(--amber); font-family: var(--mono); font-size: 10px; font-weight: 500; }
+
+  /* bubble detail card */
+  .bubble-detail {
+    margin-top: 18px;
+    padding: 18px 22px;
+    border: 1px solid var(--rose-bright);
+    border-radius: 4px;
+    background: linear-gradient(180deg, rgba(255,82,82,0.07), transparent 60%), var(--ink-2);
+    font-size: 12.5px;
+    color: var(--text-soft);
+  }
+  .bubble-detail h4 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--rose-bright);
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
+  }
+  .bubble-detail b { color: var(--text); font-weight: 500; }
+  .bubble-detail code { color: var(--azure); font-size: 11.5px; }
+  .bubble-table { width: 100%; margin: 12px 0 0; border-collapse: collapse; font-size: 12px; }
+  .bubble-table th, .bubble-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--rule-soft); }
+  .bubble-table th { color: var(--muted); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 500; }
+  .bubble-table td { color: var(--text-soft); }
+  .bubble-table .red { color: var(--rose-bright); font-weight: 500; }
+
+  /* tooltip */
+  #ttip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--ink);
+    border: 1px solid var(--rule);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    color: var(--text);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+    max-width: 300px;
+  }
+  #ttip.show { opacity: 1; }
+  #ttip .tt-name { font-weight: 500; color: var(--text); }
+  #ttip .tt-meta { color: var(--muted); font-size: 10.5px; margin-top: 4px; }
+
+  /* mechanism cards */
+  .mech-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+    margin-top: 8px;
+  }
+  .mech-card {
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--surface);
+    padding: 22px 24px 20px;
+    position: relative;
+  }
+  .mech-card.primary { border-color: var(--rose-bright); background: linear-gradient(180deg, rgba(255,82,82,0.06), transparent 60%), var(--surface); }
+  .mech-card.secondary { border-color: var(--amber); background: linear-gradient(180deg, rgba(245,166,35,0.05), transparent 60%), var(--surface); }
+  .mech-card .tag {
+    display: inline-flex;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+    border: 1px solid;
+  }
+  .mech-card.primary .tag { color: var(--rose-bright); border-color: var(--rose-bright); background: rgba(255,82,82,0.1); }
+  .mech-card.secondary .tag { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+  .mech-card h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 22px;
+    margin: 0 0 6px;
+    letter-spacing: -0.015em;
+    color: var(--text);
+  }
+  .mech-card .delta {
+    font-family: var(--display);
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1;
+    margin: 8px 0;
+  }
+  .mech-card.primary .delta { color: var(--rose-bright); }
+  .mech-card.secondary .delta { color: var(--amber); }
+  .mech-card p { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-soft); }
+  .mech-card p code { color: var(--azure); font-size: 11.5px; }
+
+  footer {
+    margin-top: 96px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  @keyframes fade-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @keyframes fade-down { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+
+  @media (max-width: 1100px) {
+    main { padding: 36px 22px 64px; }
+    .hero { grid-template-columns: 1fr; }
+    .summary-row { grid-template-columns: repeat(2, 1fr); }
+    .mech-grid { grid-template-columns: 1fr; }
+    .section-head { grid-template-columns: 1fr; gap: 12px; }
+    .section-head .num { font-size: 40px; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<!-- meta strip -->
+<header class="meta-strip">
+  <div class="ttl">GLM-5-FP8 · <span>Dual-stream regression</span> · MI355X</div>
+  <div style="display: grid; grid-template-columns: repeat(4, auto); gap: 22px; justify-content: start;">
+    <div class="meta-cell"><b>Baseline</b><code>SGLang PR #21511 + aiter PR #2879</code></div>
+    <div class="meta-cell"><b>Test</b><code>SGLANG_ENABLE_HIP_DUAL_STREAM=1</code></div>
+    <div class="meta-cell"><b>Model</b><code>GLM-5.1-FP8 TP=8 fp8 KV</code></div>
+    <div class="meta-cell"><b>Workload</b><code>8k1k cc4</code></div>
+  </div>
+  <div style="font-family: var(--display); font-size: 13px; color: var(--rose-bright); font-weight: 600; letter-spacing: 0.04em;">Apr 2026 · <span style="color:var(--gold);">Updated May 2026 (ROCm 7.13)</span></div>
+</header>
+
+<!-- hero -->
+<section class="hero">
+  <div>
+    <p class="kicker">Trace-direct measurement · 15 layer-passes</p>
+    <h1>Dual-stream loses <span class="red">+49&nbsp;µs/layer</span><br/>and <span class="red">~+18&nbsp;µs</span> of it is the GPU<br/>literally <span class="red">doing nothing.</span></h1>
+  </div>
+  <blockquote class="pull">
+    Baseline GPU is <span class="green">100% saturated</span> — kernels queued back-to-back, zero idle. Under dual-stream HIP-graph capture the same layer carries <em>4 bubble regions totaling +18 µs</em> where <em>no kernel is running on either stream</em>. That bubble is real wall-clock waste, not theory.
+  </blockquote>
+</section>
+
+<!-- summary row -->
+<section class="section">
+  <div class="section-head">
+    <div class="num">01</div>
+    <div>
+      <div class="label">Five contributors · trace-direct</div>
+      <h2>Where the +49 µs/layer comes from.</h2>
+    </div>
+  </div>
+  <div class="summary-row">
+    <div class="sum-card">
+      <div class="lbl">GPU bubble (REAL stall)</div>
+      <div class="val">+16.5 µs</div>
+      <div class="sub">≥2 µs gaps · 3 stalls / layer</div>
+      <div class="delta">vs B200 dual-stream's 0 µs ≥2 µs stalls</div>
+    </div>
+    <div class="sum-card">
+      <div class="lbl">AllReduce slowdown</div>
+      <div class="val amber">+16.0 µs</div>
+      <div class="sub">2 ARs × +7.98 µs / call</div>
+      <div class="delta">10.3 → 18.2 µs / call (mean of 781)</div>
+    </div>
+    <div class="sum-card">
+      <div class="lbl">MoE block widens</div>
+      <div class="val amber">+8.8 µs</div>
+      <div class="sub">forced unfused shared experts</div>
+      <div class="delta">+46 µs kernel-time, mostly hidden by overlap</div>
+    </div>
+    <div class="sum-card">
+      <div class="lbl">Indexer chain</div>
+      <div class="val amber">+7.0 µs</div>
+      <div class="sub">9 mem-bound NSA kernels</div>
+      <div class="delta">63.3 → 70.3 µs / layer (per-fire normalized)</div>
+    </div>
+    <div class="sum-card">
+      <div class="lbl">Layer wall total</div>
+      <div class="val">+49.0 µs</div>
+      <div class="sub">271 → 320 µs / layer</div>
+      <div class="delta">matches bench TPOT-implied +50 µs</div>
+    </div>
+  </div>
+</section>
+
+<!-- TIMELINE — the centerpiece -->
+<section class="section">
+  <div class="section-head">
+    <div class="num">02</div>
+    <div>
+      <div class="label">Trace timeline · one full layer-pass</div>
+      <h2>Every kernel, every bubble, same time scale.</h2>
+    </div>
+  </div>
+
+  <div class="timeline-wrap">
+    <div class="timeline-head">
+      <div>
+        <h3>Four traces, one full layer-pass each, same time scale.</h3>
+        <p>Row 1: MI355X single-stream (baseline). Row 2: MI355X dual-stream HIP on ROCm 7.2 (2 streams: cur + alt). Row 3: B200 dual-stream CUDA-graph (4 lanes from the stream pool). Row 4: <b style="color:var(--gold)">NEW</b> — MI355X dual-stream HIP on <b>ROCm 7.13 (TheRock pip)</b> with 4 active streams. Hover any kernel for full name + duration. <span style="color:var(--rose-bright);font-weight:500">Red bands</span> = ≥2&nbsp;µs <em>real CPU stall</em> — present on MI355X dual-stream rows, absent on B200 / single-stream. <span style="color:var(--amber);font-weight:500">Amber bands</span> = 1–2&nbsp;µs small fences. <span style="color:var(--amber);font-weight:500">Dashed amber outline</span> = AR kernels. B200's sub-1&nbsp;µs gaps are a CUPTI vs roctracer profiler-accounting artifact (see decomposition card below) and are not visualized.</p>
+      </div>
+      <span class="timeline-axis-label">µs →</span>
+    </div>
+
+    <div class="zoom-bar">
+      <span class="zoom-label">Zoom</span>
+      <button id="zoom-fit" class="active" data-zoom="0">Fit to screen</button>
+      <button id="zoom-1x" data-zoom="1380">1×</button>
+      <button id="zoom-1_5x" data-zoom="2070">1.5×</button>
+      <button id="zoom-2x" data-zoom="2760">2×</button>
+      <span class="hint">↔ scroll horizontally when zoomed in</span>
+    </div>
+
+    <svg id="timeline" viewBox="0 0 1600 840" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;">
+      <defs>
+        <pattern id="bubble-stripes" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(0,0,0,0.4)" stroke-width="2.5"/>
+        </pattern>
+        <pattern id="fence-stripes" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(245,166,35,0.6)" stroke-width="2.5"/>
+        </pattern>
+      </defs>
+
+      <!-- axis at top -->
+      <g transform="translate(150, 18)">
+        <line x1="0" y1="14" x2="1480" y2="14" class="axis-tick"/>
+        <g class="axis-label">
+          <!-- generated below in JS -->
+        </g>
+      </g>
+
+      <!-- ROW 1: MI355X baseline (1 stream) -->
+      <g id="row-baseline" transform="translate(150, 60)">
+        <!-- baseline kernels -->
+      </g>
+      <text x="20" y="44" class="row-label" style="fill:var(--green);"><tspan style="font-weight:800;font-size:15px;">1</tspan>  ·  MI355X · single-stream</text>
+      <text x="20" y="72" class="row-sub">SGLang PR #21511</text>
+      <text x="20" y="86" class="row-sub">1 stream (phys 8) · 287 µs</text>
+      <text x="20" y="103" class="row-sub" style="fill:var(--green); font-weight:500;">★ 0 µs bubble · saturated</text>
+
+      <!-- divider -->
+      <line x1="20" y1="130" x2="1290" y2="130" stroke="var(--rule)" stroke-width="1" stroke-dasharray="4 4"/>
+
+      <!-- ROW 2: MI355X dual stream (2 streams) -->
+      <g id="row-dual-cur" transform="translate(150, 190)">
+        <!-- dual cur stream -->
+      </g>
+      <g id="row-dual-alt" transform="translate(150, 240)">
+        <!-- dual alt stream -->
+      </g>
+      <text x="20" y="174" class="row-label" style="fill:var(--rose-bright);"><tspan style="font-weight:800;font-size:15px;">2</tspan>  ·  MI355X · dual-stream HIP</text>
+      <text x="20" y="205" class="row-sub">cur (phys 113)</text>
+      <text x="20" y="255" class="row-sub">alt (phys 106)</text>
+      <text x="20" y="293" class="row-sub" style="fill:var(--rose-bright); font-weight:500;">★ 17.3 µs REAL stall · 312 µs</text>
+
+      <!-- bubble overlay for MI355X dual — draws ON TOP -->
+      <g id="row-dual-bubbles" transform="translate(150, 180)">
+        <!-- bubbles span both dual streams -->
+      </g>
+
+      <!-- divider -->
+      <line x1="20" y1="315" x2="1290" y2="315" stroke="var(--rule)" stroke-width="1" stroke-dasharray="4 4"/>
+
+      <!-- ROW 3: B200 (4 lanes from CUDA-graph stream pool) -->
+      <g id="row-b200-l0" transform="translate(150, 365)"></g>
+      <g id="row-b200-l1" transform="translate(150, 390)"></g>
+      <g id="row-b200-l2" transform="translate(150, 415)"></g>
+      <g id="row-b200-l3" transform="translate(150, 440)"></g>
+      <text x="20" y="349" class="row-label" style="fill:var(--azure);"><tspan style="font-weight:800;font-size:15px;">3</tspan>  ·  B200 · CUDA-graph dual-stream</text>
+      <text x="20" y="380" class="row-sub">lane 0 (tid 8251)</text>
+      <text x="20" y="405" class="row-sub">lane 1 (tid 8253)</text>
+      <text x="20" y="430" class="row-sub">lane 2 (tid 8254)</text>
+      <text x="20" y="455" class="row-sub">lane 3 (tid 8255)</text>
+      <text x="20" y="482" class="row-sub" style="fill:var(--green); font-weight:500;">✓ 0 µs REAL stall</text>
+      <text x="20" y="500" class="row-sub" style="fill:var(--azure);">23.7 µs sub-1µs gaps =</text>
+      <text x="20" y="514" class="row-sub" style="fill:var(--azure);">CUPTI artifact (hidden)</text>
+      <text x="20" y="531" class="row-sub">303 µs · 4 lanes (pool)</text>
+
+      <!-- bubble overlay for B200 — should be visually subdued because all sub-1us -->
+      <g id="row-b200-bubbles" transform="translate(150, 355)">
+        <!-- bubbles span all 4 b200 lanes -->
+      </g>
+
+      <!-- divider before R713 -->
+      <line x1="20" y1="545" x2="1290" y2="545" stroke="var(--rule)" stroke-width="1" stroke-dasharray="4 4"/>
+
+      <!-- ROW 4: MI355X dual stream + ROCm 7.13 (4 streams) -->
+      <g id="row-r713-l0" transform="translate(150, 595)"></g>
+      <g id="row-r713-l1" transform="translate(150, 620)"></g>
+      <g id="row-r713-l2" transform="translate(150, 645)"></g>
+      <g id="row-r713-l3" transform="translate(150, 670)"></g>
+      <text x="20" y="579" class="row-label" style="fill:var(--gold);"><tspan style="font-weight:800;font-size:15px;">4</tspan>  ·  MI355X · dual-stream HIP · ROCm 7.13 (TheRock)</text>
+      <text x="20" y="610" class="row-sub">lane 0 (cur)</text>
+      <text x="20" y="635" class="row-sub">lane 1 (alt-A)</text>
+      <text x="20" y="660" class="row-sub">lane 2 (alt-B)</text>
+      <text x="20" y="685" class="row-sub">lane 3 (alt-C)</text>
+      <text x="20" y="712" class="row-sub" style="fill:var(--rose-bright); font-weight:500;">★ 16.3 µs REAL stall · 337 µs</text>
+      <text x="20" y="730" class="row-sub" style="fill:var(--text-soft);">torch 2.11+rocm7.13;</text>
+      <text x="20" y="744" class="row-sub" style="fill:var(--text-soft);">aiter rebuilt, no tuned cfg</text>
+
+      <!-- bubble overlay for R713 -->
+      <g id="row-r713-bubbles" transform="translate(150, 585)">
+        <!-- bubbles span all 4 R713 lanes -->
+      </g>
+
+      <!-- bottom marker -->
+      <line x1="150" y1="780" x2="1580" y2="780" stroke="var(--rule)" stroke-width="0.5"/>
+      <text x="200" y="800" class="row-sub" style="font-size:11px;">Layer wall (µs):  </text>
+      <text x="298" y="800" class="row-sub" style="font-size:11px; fill:var(--green);">287 (baseline)</text>
+      <text x="430" y="800" class="row-sub" style="font-size:11px; fill:var(--rose-bright);">312 (MI355X dual rocm7.2)</text>
+      <text x="700" y="800" class="row-sub" style="font-size:11px; fill:var(--azure);">303 (B200 clean)</text>
+      <text x="900" y="800" class="row-sub" style="font-size:11px; fill:var(--gold);">337 (MI355X dual rocm7.13 +4lane; +25 µs vs rocm7.2 dual)</text>
+    </svg>
+
+    <div class="legend">
+      <div class="item"><span class="swatch" style="background:var(--amber)"></span>AllReduce</div>
+      <div class="item"><span class="swatch" style="background:#4a7099"></span>indexer chain</div>
+      <div class="item"><span class="swatch" style="background:#5fa7a8"></span>GEMM</div>
+      <div class="item"><span class="swatch" style="background:#7e6ee8"></span>routed expert</div>
+      <div class="item"><span class="swatch" style="background:#6ee7b7"></span>shared expert</div>
+      <div class="item"><span class="swatch" style="background:#f5d36b"></span>silu</div>
+      <div class="item"><span class="swatch" style="background:#f08c8c"></span>main_kernel / flash_mla</div>
+      <div class="item"><span class="swatch" style="background:#9aa3b0"></span>norm / quant / misc</div>
+      <div class="item"><span class="swatch bubble"></span>≥2 µs real stall</div>
+      <div class="item"><span class="swatch" style="background:rgba(245,166,35,0.3); background-image:repeating-linear-gradient(45deg, rgba(245,166,35,0.6) 0 2px, transparent 2px 5px)"></span>1–2 µs small fence</div>
+    </div>
+
+    <div class="bubble-detail">
+      <h4>Bubble decomposition by gap size — same trace, four views</h4>
+      <p>The signal is the right-most column (<b class="red">≥ 2 µs real stall</b>). Sub-1 µs gaps look platform-different but it's a profiler-accounting artifact (see caveat below); ignore them. <b>Real stalls are what regress dual-stream</b>.</p>
+      <table class="bubble-table">
+        <thead><tr><th>trace</th><th>layer wall</th><th>total bubble</th><th>sub-1 µs (see caveat)</th><th>1–2 µs (small fence)</th><th class="red">≥2 µs (REAL stall) ★</th><th>verdict</th></tr></thead>
+        <tbody>
+          <tr><td>MI355X · single-stream</td><td>271 µs</td><td style="color:var(--green)">0 µs</td><td>0 µs</td><td>0 µs</td><td style="color:var(--green)"><b>0 µs</b></td><td style="color:var(--green)">clean</td></tr>
+          <tr><td>MI355X · dual-stream HIP (ROCm 7.2, 2 streams)</td><td>320 µs</td><td class="red">18.2 µs</td><td>~0 µs</td><td>1.7 µs (1 fence)</td><td class="red"><b>16.5 µs (3 stalls)</b></td><td class="red">real HIP-runtime overhead</td></tr>
+          <tr><td>B200 · CUDA-graph dual-stream</td><td>303 µs</td><td>23.4 µs</td><td>23.4 µs (65 gaps)</td><td>0 µs</td><td style="color:var(--green)"><b>0 µs</b></td><td style="color:var(--green)">clean</td></tr>
+          <tr style="background: rgba(245,166,35,0.06);"><td><b style="color:var(--gold)">MI355X · dual-stream + ROCm 7.13 (TheRock, 4 streams)</b></td><td><b style="color:var(--rose-bright)">337 µs</b> (this layer) / <b>366 µs</b> (median over 391)</td><td>18.2 µs</td><td>~0 µs</td><td>1.9 µs</td><td class="red"><b>16.3 µs (3 stalls)</b></td><td class="red"><b>bubble unchanged but kernels +30 µs slower</b></td></tr>
+        </tbody>
+      </table>
+
+      <p style="margin-top: 12px; padding: 10px 12px; background: rgba(245,166,35,0.08); border-left: 3px solid var(--gold); border-radius: 2px; font-size: 12px;">
+        <b style="color:var(--gold)">★ ROCm 7.13 + 4-stream: bubble unchanged, but kernels are slower</b><br>
+        Surprising finding from the trace below: <b>real-stall bubble is ~the same as ROCm 7.2 dual (16.3 vs 16.5 µs / layer)</b> — the HIP-graph fence overhead did not get worse with more streams. The +25–54 µs / layer regression comes from <b>kernels themselves running slower</b>:<br>
+        • <b>AR per call:</b> baseline 10.3 → ROCm 7.2 dual 18.2 → ROCm 7.13 dual <b>22.3 µs</b> at this layer (median over the trace 25.7 µs). +4–7 µs / call × 2 calls = <b>+8–15 µs / layer</b>.<br>
+        • <b>Indexer chain:</b> 70 → <b>91 µs / layer</b> (+21 µs). Memory-bound kernels (Hadamard, act_quant, paged_mqa, topk) each pay 0.5–2 µs more vs ROCm 7.2 dual; HBM contention with 4 concurrent streams is worse than 2.<br>
+        • <b>GEMMs (q_b_proj, w_kc, ck_gemm):</b> aiter rebuilt with <code>PREBUILD_KERNELS=1</code> but no tuned configs (<code>/tmp/aiter_configs/*.csv</code> empty), so first-touch shapes hit "torch solution:0" / "skinny solution:2" defaults. <b>+9 µs in 9 GEMMs</b> mostly from this.<br>
+        Net: dual-stream regression went from <b>+49 → +66–95 µs / layer</b> with the ROCm 7.13 stack. The 4-stream layout doesn't make the layout worse per se; the new user-space stack just hasn't had its tuned configs and warm-up complete.
+      </p>
+
+      <p style="margin-top: 14px;"><b style="color:var(--azure)">⚠ Sub-1 µs caveat — profiler accounting, not GPU behavior</b></p>
+      <p style="margin-top: 6px;">The naive reading "B200 has 23 µs / layer of launch micro-gaps, MI355X has 0 — MI355X packs kernels tighter" <b>is wrong</b>. The sub-1 µs column is a CUPTI vs roctracer accounting difference, not a real GPU-utilization gap.</p>
+      <table class="bubble-table" style="margin-top: 6px;">
+        <thead><tr><th>raw-timestamp metric</th><th>MI355X (roctracer)</th><th>B200 (CUPTI)</th></tr></thead>
+        <tbody>
+          <tr><td>negative gaps (next-start < prev-end, physically impossible)</td><td><b style="color:var(--green)">1 outlier</b></td><td><b class="red">4,296 (11.28%)</b></td></tr>
+          <tr><td>smallest gap reported</td><td>−0.124 µs</td><td class="red">−6.656 µs</td></tr>
+          <tr><td>sub-50 ns gaps</td><td>99.47%</td><td>0.71%</td></tr>
+          <tr><td>p50 gap</td><td>0.001 µs (1 ns)</td><td>0.352 µs</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 10px;">The smoking gun: <b>B200 has 4,296 negative gaps</b>, smallest −6.66 µs. A negative gap (next-kernel start_ts before prev-kernel end_ts) is physically impossible if both ts come from the same event class. The only explanation: CUPTI ts uses different events for start vs end, while roctracer uses coherent ones:</p>
+      <table class="bubble-table" style="margin-top: 6px;">
+        <thead><tr><th></th><th>start_ts</th><th>end_ts</th></tr></thead>
+        <tbody>
+          <tr><td>CUDA / CUPTI</td><td>first warp begins on SM</td><td>last warp completes on SM</td></tr>
+          <tr><td>ROCm / roctracer</td><td>AQL dispatch packet processed (CP layer)</td><td>kernel completion signal</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 10px;">CP→SM dispatch latency is ~200–500 ns on both platforms. CUPTI <em>exposes</em> it as inter-kernel gap; roctracer <em>absorbs</em> it into the kernel's reported duration. So MI355X's "0 µs gap" doesn't mean 0 GPU idle — it means roctracer charged dispatch latency to the kernel itself. <b>The actual physical dispatch latency is similar on both platforms.</b> Sub-1 µs gaps are not actionable on either side without kernel fusion.</p>
+
+      <p style="margin-top: 16px;"><b class="red">What does matter: MI355X dual-stream's 3 ≥2 µs stalls.</b> All ~5–6 µs each, all caused by HIP-graph dual-stream replay:</p>
+      <table class="bubble-table" style="margin-top: 6px;">
+        <thead><tr><th>#</th><th>kind</th><th>position</th><th>duration</th><th>what's around it</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td style="color:var(--amber)">small fence</td><td>32.6 → 34.2 µs</td><td>1.6 µs</td><td>between attention-block kernels</td></tr>
+          <tr><td>2</td><td class="red">REAL stall</td><td>36.7 → 42.1 µs</td><td class="red">5.4 µs</td><td>before <code>q_b_proj</code> on cur, while <code>indexer_layernorm</code> queued on alt — cross-stream <code>wait_event</code></td></tr>
+          <tr><td>3</td><td class="red">REAL stall</td><td>139.2 → 145.2 µs</td><td class="red">6.1 µs</td><td>after <code>main_kernel</code> (NSA paged_mqa); before MoE-block dispatch</td></tr>
+          <tr><td>4</td><td class="red">REAL stall</td><td>286.6 → 292.5 µs</td><td class="red">5.8 µs</td><td>between MoE-AR end and next-layer dispatch — graph reentry overhead</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 12px;">Why these are stalls and not dispatch latency: each is 5–6 µs (roughly 10× normal dispatch latency), they don't appear in MI355X single-stream (same kernels, same bookkeeping), and they don't appear in B200 dual-stream either. They are HIP-graph-specific cross-stream <code>wait_event</code> fences. Same root cause class as the AR slowdown — both surface only under dual-stream HIP-graph capture, both should be re-checked on each new ROCm release.</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- mechanisms -->
+<section class="section">
+  <div class="section-head">
+    <div class="num">03</div>
+    <div>
+      <div class="label">Mechanism · primary vs secondary</div>
+      <h2>Two cost contributors that are pure runtime artifacts.</h2>
+    </div>
+  </div>
+  <div class="mech-grid">
+    <div class="mech-card primary">
+      <span class="tag">★ primary · runtime artifact</span>
+      <h3>Bubble + AR slowdown</h3>
+      <div class="delta">+34.2 µs / layer</div>
+      <p><b>Bubble +18.2&nbsp;µs</b>: GPU sits idle because HIP graph capture inserts cross-stream fences during replay. Same trace, same model, same kernels — the GPU is just waiting.</p>
+      <p><b>AR +16.0&nbsp;µs</b>: <code>aiter::cross_device_reduce_1stage</code> is identical bytes/aiter-build/topology, but mean +7.98&nbsp;µs / call slower under dual-stream HIP-graph replay (likely peer-fence drains the alt-stream KV-cache writes). Distribution shifts uniformly right.</p>
+      <p style="margin-top:10px;"><b style="color:var(--rose-bright)">These together = ~70% of the regression.</b> Both are HIP-runtime / graph-capture artifacts, not properties of the dual-stream attention layout. A future ROCm release that fixes the graph fence cost would recover most of it.</p>
+    </div>
+
+    <div class="mech-card secondary">
+      <span class="tag">secondary · model-config side-effects</span>
+      <h3>MoE unfusing + indexer contention</h3>
+      <div class="delta">+15.8 µs / layer</div>
+      <p><b>MoE +8.8&nbsp;µs</b>: <code>--dual-stream-rocm</code> implies <code>--disable-shared-experts-fusion</code>, which forces aiter to split the shared-expert pipeline into 4 kernels (<code>ck_gemm_preshuffle</code> gate_up + silu + <code>ck_gemm_preshuffle</code> down + add). The dual-stream layout overlaps most of that with the routed-expert chain on cur stream — kernel-duration sum is +46&nbsp;µs but only +8.8&nbsp;µs surfaces at wall-clock.</p>
+      <p><b>Indexer +7.0&nbsp;µs</b>: 9 NSA memory-bound kernels each pay 0.7–1.0&nbsp;µs in dual-stream when the indexer chain on alt competes with cur-stream <code>q_b_proj</code> / <code>kv_b_proj</code> for HBM bandwidth (8&nbsp;TB/s on MI355X, shared). Compute-bound kernels (<code>topk_transform</code>, <code>cached_indirect</code>) are unaffected.</p>
+      <p style="margin-top:10px;"><b>These would recover</b> if aiter ships a fused shared-expert kernel compatible with the dual-stream MoE path.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Trace-direct measurement on 15 consecutive decode-step layer-passes from each profile · workload 8k1k cc4 · MI355X TP=8 fp8 KV cache · scripts /tmp/inspect_*.py · source MD: <code>SGLang-benchmarks/tools/dual_stream_regression_analysis.md</code>
+</footer>
+
+<div id="ttip"></div>
+
+<script>
+// Inline trace data for one full layer-pass
+const BASELINE = {
+ "layer_dur": 287.16162109375,
+ "rects": [
+  {
+   "tid": 8,
+   "start": 0.0009765625,
+   "dur": 4.319,
+   "end": 4.3199765625,
+   "name": "fused_rms_fp8",
+   "raw_name": "_fused_rms_fp8_group_quant_kernel",
+   "cat": "norm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 4.32080078125,
+   "dur": 4.439,
+   "end": 8.75980078125,
+   "name": "elementwise_unroll<128, 4, at::n",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_ker",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 8.7607421875,
+   "dur": 16.599,
+   "end": 25.3597421875,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 25.36083984375,
+   "dur": 4.359,
+   "end": 29.71983984375,
+   "name": "fused_rms_fp8",
+   "raw_name": "_fused_rms_fp8_group_quant_kernel",
+   "cat": "norm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 29.720703125,
+   "dur": 4.119,
+   "end": 33.839703125,
+   "name": "elementwise_unroll<128, 4, at::n",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_ker",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 33.8408203125,
+   "dur": 6.399,
+   "end": 40.2398203125,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 40.24072265625,
+   "dur": 4.16,
+   "end": 44.40072265625,
+   "name": "dynamic_quantIDF16bDB8_Li32EEEvP",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 44.40185546875,
+   "dur": 6.479,
+   "end": 50.88085546875,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 50.8818359375,
+   "dur": 3.959,
+   "end": 54.8408359375,
+   "name": "elementwise_unroll<128, 4, at::n",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_ker",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 54.841796875,
+   "dur": 16.479,
+   "end": 71.320796875,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 71.32177734375,
+   "dur": 4.479,
+   "end": 75.80077734375,
+   "name": "ck_tile::Layernorm2dFwdINS_29Lay",
+   "raw_name": "_ZN7ck_tile6kentryILi1ENS_14Layernorm2dFwdINS_29Layernorm2dFwdPipelineOnePassINS_29Layernorm2dFwdPipelineProblemIDF16bDF",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 75.8017578125,
+   "dur": 8.799,
+   "end": 84.6007578125,
+   "name": "void cached_indirect<aiter::OpCa",
+   "raw_name": "void aiter::kn_entry_2c_sbhd_cached_indirect_inplace<aiter::OpCachedFwd, 1, true, false, true, true, 1, true, c10::BFloa",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 84.60205078125,
+   "dur": 4.279,
+   "end": 88.88105078125,
+   "name": "hadamard<fast_hadamard_transform",
+   "raw_name": "void fast_hadamard_transform_kernel<fast_hadamard_transform_kernel_traits<16, 7, c10::BFloat16> >(HadamardParamsBase)",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 88.8818359375,
+   "dur": 4.279,
+   "end": 93.1608359375,
+   "name": "hadamard<fast_hadamard_transform",
+   "raw_name": "void fast_hadamard_transform_kernel<fast_hadamard_transform_kernel_traits<16, 7, c10::BFloat16> >(HadamardParamsBase)",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 93.162109375,
+   "dur": 4.639,
+   "end": 97.801109375,
+   "name": "act_quant",
+   "raw_name": "act_quant_kernel__kernel",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 97.8017578125,
+   "dur": 4.319,
+   "end": 102.1207578125,
+   "name": "indexer_k_quantIDF16bDB8_LN4vllm",
+   "raw_name": "_ZN5aiter32indexer_k_quant_and_cache_kernelIDF16bDB8_LN4vllm18Fp8KVCacheDataTypeE1ELi8ELi8ELi16EEEvPKT_PT0_PKliiiiibb",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 102.1220703125,
+   "dur": 5.319,
+   "end": 107.4410703125,
+   "name": "wv_splitk<__hip_bfloat16, 64, 1,",
+   "raw_name": "void aiter::wv_splitk_small_fp16_bf16_kernel<__hip_bfloat16, 64, 1, 1, 8, 4, 4>(int, int, __hip_bfloat16 const*, __hip_b",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 107.44189453125,
+   "dur": 4.399,
+   "end": 111.84089453125,
+   "name": "fused_mul_unsq",
+   "raw_name": "triton_poi_fused_mul_unsqueeze_0",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 111.841796875,
+   "dur": 4.079,
+   "end": 115.920796875,
+   "name": "paged_mqa_logits",
+   "raw_name": "_gluon_deepgemm_fp8_paged_mqa_logits_preshuffle",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 115.921875,
+   "dur": 13.159,
+   "end": 129.080875,
+   "name": "topk_transform((anonymous namesp",
+   "raw_name": "(anonymous namespace)::topk_transform_decode_kernel((anonymous namespace)::FastTopKParams, int*, int const*, long)",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 129.08203125,
+   "dur": 4.719,
+   "end": 133.80103125,
+   "name": "batched_gemm_a8w8_HAS_BIAS_0_BLO",
+   "raw_name": "_batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant_kernel_HAS_BIAS_0_BLOCK_SIZE_M_16_BLOCK_SIZE_N_",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 133.8017578125,
+   "dur": 4.319,
+   "end": 138.1207578125,
+   "name": "fused_qk_rope_cat",
+   "raw_name": "_fused_qk_rope_cat_and_cache_mla_kernel",
+   "cat": "fused_kernel",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 138.1220703125,
+   "dur": 5.319,
+   "end": 143.4410703125,
+   "name": "CatArrayBatchedCopy<at::native::",
+   "raw_name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<1u>, unsigned ",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 143.44189453125,
+   "dur": 10.999,
+   "end": 154.44089453125,
+   "name": "main_kernel",
+   "raw_name": "main_kernel",
+   "cat": "mqa_main",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 154.44189453125,
+   "dur": 8.199,
+   "end": 162.64089453125,
+   "name": "main_kernel",
+   "raw_name": "main_kernel",
+   "cat": "mqa_main",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 162.64208984375,
+   "dur": 7.959,
+   "end": 170.60108984375,
+   "name": "batched_gemm_a8w8_HAS_BIAS_0_BLO",
+   "raw_name": "_batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant_kernel_HAS_BIAS_0_BLOCK_SIZE_M_16_BLOCK_SIZE_N_",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 170.60205078125,
+   "dur": 4.239,
+   "end": 174.84105078125,
+   "name": "flatten_fp8_quant",
+   "raw_name": "_fused_flatten_fp8_group_quant_kernel",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 174.841796875,
+   "dur": 3.959,
+   "end": 178.800796875,
+   "name": "elementwise_unroll<128, 4, at::n",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_ker",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 178.8017578125,
+   "dur": 6.8,
+   "end": 185.6017578125,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 185.60302734375,
+   "dur": 13.159,
+   "end": 198.76202734375,
+   "name": "AR",
+   "raw_name": "_ZN5aiter26cross_device_reduce_1stageIDF16bLi8ELb0EEEvPNS_8RankDataES2_NS_11RankSignalsEPNS_6SignalEPT_ii",
+   "cat": "ar",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 198.7626953125,
+   "dur": 4.439,
+   "end": 203.2016953125,
+   "name": "add_rmsnorm_quantIDF16bDF16bLi25",
+   "raw_name": "_ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi256ELi24ELb1ELb0ELb1ELi1EEEvPT0_PT_PfS4_S4_S4_diiiiiiib",
+   "cat": "norm",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 203.203125,
+   "dur": 7.119,
+   "end": 210.322125,
+   "name": "bf16gemm_splitk",
+   "raw_name": "aiter::bf16gemm_fp32bf16_tn_32x64_splitk_clean",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 210.32275390625,
+   "dur": 5.039,
+   "end": 215.36175390625,
+   "name": "grouped_topk<c10::BFloat16, floa",
+   "raw_name": "void aiter::grouped_topk_kernel<c10::BFloat16, float __vector(4), 1, true, true, false>(c10::BFloat16*, c10::BFloat16 co",
+   "cat": "routing",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 215.36279296875,
+   "dur": 4.399,
+   "end": 219.76179296875,
+   "name": "fused_shared_expert",
+   "raw_name": "_fused_append_shared_experts_kernel",
+   "cat": "shared_expert",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 219.7626953125,
+   "dur": 8.879,
+   "end": 228.6416953125,
+   "name": "void ck_tile::kentry<2, MoeSorti",
+   "raw_name": "void ck_tile::kentry<2, ck_tile::MoeSortingKernel<ck_tile::MoeSortingProblemEx<int, float, 1, true, false, false, true, ",
+   "cat": "routing",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 228.64306640625,
+   "dur": 4.559,
+   "end": 233.20206640625,
+   "name": "dynamic_quantIDF16bDB8_Li32EEEvP",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 233.203125,
+   "dur": 4.479,
+   "end": 237.682125,
+   "name": "fillBuffer",
+   "raw_name": "__amd_rocclr_fillBufferAligned",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 237.68310546875,
+   "dur": 17.799,
+   "end": 255.48210546875,
+   "name": "ck_moe_gemmck::GridwiseMoeGemmBl",
+   "raw_name": "void ck::kernel_moe_gemm<ck::GridwiseMoeGemmBlockScale<ck::tensor_layout::gemm::RowMajor, ck::tensor_layout::gemm::Colum",
+   "cat": "routed_expert",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 255.48291015625,
+   "dur": 4.319,
+   "end": 259.80191015625,
+   "name": "aiter::act_and_mulIfDF16bTnPFfRK",
+   "raw_name": "_ZN5aiter18act_and_mul_kernelIfDF16bTnPFfRKT_EXadL_ZNS_11silu_kernelIfEEfS3_EELi4EEEvPT0_PS2_i",
+   "cat": "silu",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 259.802734375,
+   "dur": 4.679,
+   "end": 264.481734375,
+   "name": "dynamic_quantIDF16bDB8_Li32EEEvP",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 264.48291015625,
+   "dur": 9.839,
+   "end": 274.32191015625,
+   "name": "ck_moe_gemmck::GridwiseMoeGemmBl",
+   "raw_name": "void ck::kernel_moe_gemm<ck::GridwiseMoeGemmBlockScale<ck::tensor_layout::gemm::RowMajor, ck::tensor_layout::gemm::Colum",
+   "cat": "routed_expert",
+   "lane": 0
+  },
+  {
+   "tid": 8,
+   "start": 274.32275390625,
+   "dur": 12.839,
+   "end": 287.16175390625,
+   "name": "AR",
+   "raw_name": "_ZN5aiter26cross_device_reduce_1stageIDF16bLi8ELb0EEEvPNS_8RankDataES2_NS_11RankSignalsEPNS_6SignalEPT_ii",
+   "cat": "ar",
+   "lane": 0
+  }
+ ],
+ "bubbles": [],
+ "summary": {
+  "total_dur": 0,
+  "launch_dur": 0,
+  "fence_dur": 0,
+  "stall_dur": 0,
+  "launch_count": 0,
+  "fence_count": 0,
+  "stall_count": 0
+ },
+ "n_lanes": 1,
+ "tids": [
+  8
+ ]
+};
+const DUAL = {
+ "layer_dur": 312.2421875,
+ "rects": [
+  {
+   "tid": 113,
+   "start": 0.0009765625,
+   "dur": 4.959,
+   "end": 4.9599765625,
+   "name": "fused_rms_fp8",
+   "raw_name": "_fused_rms_fp8_group_quant_kernel",
+   "cat": "norm",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 4.9609375,
+   "dur": 4.719,
+   "end": 9.679937500000001,
+   "name": "elementwise_unroll<128, 4, at::n",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_ker",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 9.68115234375,
+   "dur": 18.679,
+   "end": 28.36015234375,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 28.36083984375,
+   "dur": 4.199,
+   "end": 32.55983984375,
+   "name": "add_rmsnorm_quantIDF16bDF16bLi25",
+   "raw_name": "_ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi256ELi8ELb0ELb0ELb1ELi1EEEvPT0_PT_PfS4_S4_S4_diiiiiiib",
+   "cat": "norm",
+   "lane": 0
+  },
+  {
+   "tid": 106,
+   "start": 34.201171875,
+   "dur": 2.519,
+   "end": 36.720171875,
+   "name": "add_rmsnorm_quantIDF16bDF16bLi64",
+   "raw_name": "_ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi64ELi8ELb0ELb0ELb1ELi1EEEvPT0_PT_PfS4_S4_S4_diiiiiiib",
+   "cat": "norm",
+   "lane": 1
+  },
+  {
+   "tid": 113,
+   "start": 42.12109375,
+   "dur": 3.119,
+   "end": 45.24009375,
+   "name": "dynamic_quantIDF16bDB8_Li32EEEvP",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 106,
+   "start": 42.64111328125,
+   "dur": 2.479,
+   "end": 45.12011328125,
+   "name": "dynamic_quantIDF16bDB8_Li32EEEvP",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "misc",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 45.12109375,
+   "dur": 9.639,
+   "end": 54.760093749999996,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 1
+  },
+  {
+   "tid": 113,
+   "start": 45.2412109375,
+   "dur": 9.359,
+   "end": 54.6002109375,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 54.60107421875,
+   "dur": 4.999,
+   "end": 59.60007421875,
+   "name": "batched_gemm_a8w8_HAS_BIAS_0_BLO",
+   "raw_name": "_batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant_kernel_HAS_BIAS_0_BLOCK_SIZE_M_16_BLOCK_SIZE_N_",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 106,
+   "start": 54.76123046875,
+   "dur": 4.279,
+   "end": 59.040230468749996,
+   "name": "elementwise_unroll<128, 4, at::n",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_ker",
+   "cat": "misc",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 59.041015625,
+   "dur": 16.879,
+   "end": 75.920015625,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 1
+  },
+  {
+   "tid": 113,
+   "start": 59.60107421875,
+   "dur": 3.719,
+   "end": 63.32007421875,
+   "name": "fused_qk_rope_cat",
+   "raw_name": "_fused_qk_rope_cat_and_cache_mla_kernel",
+   "cat": "fused_kernel",
+   "lane": 0
+  },
+  {
+   "tid": 106,
+   "start": 75.9208984375,
+   "dur": 4.999,
+   "end": 80.9198984375,
+   "name": "ck_tile::Layernorm2dFwdINS_29Lay",
+   "raw_name": "_ZN7ck_tile6kentryILi1ENS_14Layernorm2dFwdINS_29Layernorm2dFwdPipelineOnePassINS_29Layernorm2dFwdPipelineProblemIDF16bDF",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 80.9208984375,
+   "dur": 8.839,
+   "end": 89.7598984375,
+   "name": "void cached_indirect<aiter::OpCa",
+   "raw_name": "void aiter::kn_entry_2c_sbhd_cached_indirect_inplace<aiter::OpCachedFwd, 1, true, false, true, true, 1, true, c10::BFloa",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 89.76123046875,
+   "dur": 4.999,
+   "end": 94.76023046875,
+   "name": "hadamard<fast_hadamard_transform",
+   "raw_name": "void fast_hadamard_transform_kernel<fast_hadamard_transform_kernel_traits<16, 7, c10::BFloat16> >(HadamardParamsBase)",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 94.76123046875,
+   "dur": 4.759,
+   "end": 99.52023046875,
+   "name": "hadamard<fast_hadamard_transform",
+   "raw_name": "void fast_hadamard_transform_kernel<fast_hadamard_transform_kernel_traits<16, 7, c10::BFloat16> >(HadamardParamsBase)",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 99.52099609375,
+   "dur": 5.159,
+   "end": 104.67999609375,
+   "name": "act_quant",
+   "raw_name": "act_quant_kernel__kernel",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 104.68115234375,
+   "dur": 4.959,
+   "end": 109.64015234375,
+   "name": "indexer_k_quantIDF16bDB8_LN4vllm",
+   "raw_name": "_ZN5aiter32indexer_k_quant_and_cache_kernelIDF16bDB8_LN4vllm18Fp8KVCacheDataTypeE1ELi8ELi8ELi16EEEvPKT_PT0_PKliiiiibb",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 109.64111328125,
+   "dur": 6.119,
+   "end": 115.76011328125,
+   "name": "wv_splitk<__hip_bfloat16, 64, 1,",
+   "raw_name": "void aiter::wv_splitk_small_fp16_bf16_kernel<__hip_bfloat16, 64, 1, 1, 8, 4, 4>(int, int, __hip_bfloat16 const*, __hip_b",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 115.76123046875,
+   "dur": 4.799,
+   "end": 120.56023046875,
+   "name": "fused_mul_unsq",
+   "raw_name": "triton_poi_fused_mul_unsqueeze_0",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 120.56103515625,
+   "dur": 5.399,
+   "end": 125.96003515625,
+   "name": "paged_mqa_logits",
+   "raw_name": "_gluon_deepgemm_fp8_paged_mqa_logits_preshuffle",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 125.9609375,
+   "dur": 13.199,
+   "end": 139.1599375,
+   "name": "topk_transform((anonymous namesp",
+   "raw_name": "(anonymous namespace)::topk_transform_decode_kernel((anonymous namespace)::FastTopKParams, int*, int const*, long)",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 113,
+   "start": 145.2421875,
+   "dur": 11.319,
+   "end": 156.5611875,
+   "name": "main_kernel",
+   "raw_name": "main_kernel",
+   "cat": "mqa_main",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 156.56201171875,
+   "dur": 9.959,
+   "end": 166.52101171875,
+   "name": "main_kernel",
+   "raw_name": "main_kernel",
+   "cat": "mqa_main",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 166.52197265625,
+   "dur": 7.359,
+   "end": 173.88097265625,
+   "name": "batched_gemm_a8w8_HAS_BIAS_0_BLO",
+   "raw_name": "_batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant_kernel_HAS_BIAS_0_BLOCK_SIZE_M_16_BLOCK_SIZE_N_",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 173.8818359375,
+   "dur": 5.159,
+   "end": 179.0408359375,
+   "name": "flatten_fp8_quant",
+   "raw_name": "_fused_flatten_fp8_group_quant_kernel",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 179.0419921875,
+   "dur": 6.399,
+   "end": 185.4409921875,
+   "name": "elementwise_unroll<128, 4, at::n",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_ker",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 185.44189453125,
+   "dur": 7.559,
+   "end": 193.00089453125,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 193.001953125,
+   "dur": 18.719,
+   "end": 211.720953125,
+   "name": "AR",
+   "raw_name": "_ZN5aiter26cross_device_reduce_1stageIDF16bLi8ELb0EEEvPNS_8RankDataES2_NS_11RankSignalsEPNS_6SignalEPT_ii",
+   "cat": "ar",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 211.72216796875,
+   "dur": 6.039,
+   "end": 217.76116796875,
+   "name": "add_rmsnorm_quantIDF16bDF16bLi25",
+   "raw_name": "_ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi256ELi24ELb1ELb0ELb1ELi1EEEvPT0_PT_PfS4_S4_S4_diiiiiiib",
+   "cat": "norm",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 217.76220703125,
+   "dur": 5.279,
+   "end": 223.04120703125,
+   "name": "dynamic_quantIDF16bDB8_Li32EEEvP",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 223.0419921875,
+   "dur": 33.359,
+   "end": 256.4009921875,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 106,
+   "start": 223.162109375,
+   "dur": 7.519,
+   "end": 230.681109375,
+   "name": "bf16gemm_splitk",
+   "raw_name": "aiter::bf16gemm_fp32bf16_tn_32x64_splitk_clean",
+   "cat": "misc",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 230.68212890625,
+   "dur": 5.239,
+   "end": 235.92112890625,
+   "name": "grouped_topk<c10::BFloat16, floa",
+   "raw_name": "void aiter::grouped_topk_kernel<c10::BFloat16, float __vector(4), 1, true, true, false>(c10::BFloat16*, c10::BFloat16 co",
+   "cat": "routing",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 235.921875,
+   "dur": 7.799,
+   "end": 243.720875,
+   "name": "void ck_tile::kentry<2, MoeSorti",
+   "raw_name": "void ck_tile::kentry<2, ck_tile::MoeSortingKernel<ck_tile::MoeSortingProblemEx<int, float, 1, true, false, false, true, ",
+   "cat": "routing",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 243.72216796875,
+   "dur": 4.759,
+   "end": 248.48116796875001,
+   "name": "dynamic_quantIDF16bDB8_Li32EEEvP",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "misc",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 253.40185546875,
+   "dur": 15.519,
+   "end": 268.92085546875,
+   "name": "ck_moe_gemmck::GridwiseMoeGemmBl",
+   "raw_name": "void ck::kernel_moe_gemm<ck::GridwiseMoeGemmBlockScale<ck::tensor_layout::gemm::RowMajor, ck::tensor_layout::gemm::Colum",
+   "cat": "routed_expert",
+   "lane": 1
+  },
+  {
+   "tid": 113,
+   "start": 256.40185546875,
+   "dur": 5.119,
+   "end": 261.52085546875,
+   "name": "sgl_hip::act_and_mulI14__hip_bfl",
+   "raw_name": "_ZN7sgl_hip10activation18act_and_mul_kernelI14__hip_bfloat16TnPFT_RKS3_EXadL_Z4siluIS2_ES3_S5_EEEEvPS3_PS4_i",
+   "cat": "silu",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 261.52197265625,
+   "dur": 4.639,
+   "end": 266.16097265625,
+   "name": "dynamic_quantIDF16bDB8_Li32EEEvP",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 266.162109375,
+   "dur": 4.439,
+   "end": 270.601109375,
+   "name": "ck_gemm_preshuffle",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 106,
+   "start": 268.921875,
+   "dur": 4.319,
+   "end": 273.240875,
+   "name": "aiter::act_and_mulIfDF16bTnPFfRK",
+   "raw_name": "_ZN5aiter18act_and_mul_kernelIfDF16bTnPFfRKT_EXadL_ZNS_11silu_kernelIfEEfS3_EELi4EEEvPT0_PS2_i",
+   "cat": "silu",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 273.2421875,
+   "dur": 4.879,
+   "end": 278.1211875,
+   "name": "dynamic_quantIDF16bDB8_Li32EEEvP",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "misc",
+   "lane": 1
+  },
+  {
+   "tid": 106,
+   "start": 278.1220703125,
+   "dur": 8.519,
+   "end": 286.6410703125,
+   "name": "ck_moe_gemmck::GridwiseMoeGemmBl",
+   "raw_name": "void ck::kernel_moe_gemm<ck::GridwiseMoeGemmBlockScale<ck::tensor_layout::gemm::RowMajor, ck::tensor_layout::gemm::Colum",
+   "cat": "routed_expert",
+   "lane": 1
+  },
+  {
+   "tid": 113,
+   "start": 292.48291015625,
+   "dur": 3.799,
+   "end": 296.28191015625,
+   "name": "void at::native::vectorized_add<",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add",
+   "lane": 0
+  },
+  {
+   "tid": 113,
+   "start": 296.283203125,
+   "dur": 15.959,
+   "end": 312.242203125,
+   "name": "AR",
+   "raw_name": "_ZN5aiter26cross_device_reduce_1stageIDF16bLi8ELb0EEEvPNS_8RankDataES2_NS_11RankSignalsEPNS_6SignalEPT_ii",
+   "cat": "ar",
+   "lane": 0
+  }
+ ],
+ "bubbles": [
+  {
+   "start": 32.55983984375,
+   "end": 34.201171875,
+   "dur": 1.641332031250002,
+   "kind": "small_fence"
+  },
+  {
+   "start": 36.720171875,
+   "end": 42.12109375,
+   "dur": 5.400921875000002,
+   "kind": "real_stall"
+  },
+  {
+   "start": 139.1599375,
+   "end": 145.2421875,
+   "dur": 6.082249999999988,
+   "kind": "real_stall"
+  },
+  {
+   "start": 286.6410703125,
+   "end": 292.48291015625,
+   "dur": 5.8418398437499945,
+   "kind": "real_stall"
+  }
+ ],
+ "summary": {
+  "total_dur": 18.966343749999986,
+  "launch_dur": 0,
+  "fence_dur": 1.641332031250002,
+  "stall_dur": 17.325011718749984,
+  "launch_count": 0,
+  "fence_count": 1,
+  "stall_count": 3
+ },
+ "n_lanes": 2,
+ "tids": [
+  106,
+  113
+ ]
+};
+
+const B200 = {
+ "layer_dur": 303.486328125,
+ "n_lanes": 4,
+ "tids": [
+  8251,
+  8253,
+  8254,
+  8255
+ ],
+ "rects": [
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 0.0,
+   "dur": 9.152,
+   "end": 9.152,
+   "name": "AR<__nv_bfloat16, 8>(sglang::RankDat",
+   "raw_name": "void sglang::cross_device_reduce_1stage<__nv_bfloat16, 8>(sglang::RankData*, sglang::RankSignals, sglang::Signal*, __nv_",
+   "cat": "ar"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 8.8955078125,
+   "dur": 3.456,
+   "end": 12.3515078125,
+   "name": "FusedAddRMSNorm<8u, __nv_bfloat16>(_",
+   "raw_name": "void flashinfer::norm::FusedAddRMSNormKernel<8u, __nv_bfloat16>(__nv_bfloat16*, __nv_bfloat16*, __nv_bfloat16*, unsigned",
+   "cat": "norm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 12.7041015625,
+   "dur": 2.24,
+   "end": 14.9441015625,
+   "name": "per_token_quant<__nv_bfloat16, __nv_",
+   "raw_name": "void per_token_group_quant_8bit_kernel<__nv_bfloat16, __nv_fp8_e4m3, true, true, unsigned int>(__nv_bfloat16 const*, voi",
+   "cat": "norm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 15.263671875,
+   "dur": 20.288,
+   "end": 35.551671875,
+   "name": "deep_gemm_fp8<(cute::UMMA::Major)0, ",
+   "raw_name": "void deep_gemm::sm100_fp8_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 0u, 2624u, 6144u, 128u, 32u, 128u, ",
+   "cat": "gemm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 35.3916015625,
+   "dur": 2.592,
+   "end": 37.9836015625,
+   "name": "RMSNorm<8u, __nv_bfloat16>(__nv_bflo",
+   "raw_name": "void flashinfer::norm::RMSNormKernel<8u, __nv_bfloat16>(__nv_bfloat16*, __nv_bfloat16*, __nv_bfloat16*, unsigned int, un",
+   "cat": "norm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 36.2236328125,
+   "dur": 2.272,
+   "end": 38.4956328125,
+   "name": "RMSNorm<8u, __nv_bfloat16>(__nv_bflo",
+   "raw_name": "void flashinfer::norm::RMSNormKernel<8u, __nv_bfloat16>(__nv_bfloat16*, __nv_bfloat16*, __nv_bfloat16*, unsigned int, un",
+   "cat": "norm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 38.49609375,
+   "dur": 3.552,
+   "end": 42.04809375,
+   "name": "nvjet_gemm_64x8_64x16_1x1_h_bz_split",
+   "raw_name": "nvjet_sm100_tst_64x8_64x16_1x1_h_bz_splitK_TNT",
+   "cat": "gemm"
+  },
+  {
+   "lane": 2,
+   "tid": 8254,
+   "start": 39.4873046875,
+   "dur": 2.016,
+   "end": 41.5033046875,
+   "name": "per_token_quant<__nv_bfloat16, __nv_",
+   "raw_name": "void per_token_group_quant_8bit_kernel<__nv_bfloat16, __nv_fp8_e4m3, true, true, unsigned int>(__nv_bfloat16 const*, voi",
+   "cat": "norm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 41.087890625,
+   "dur": 2.368,
+   "end": 43.455890625,
+   "name": "cublasLt_splitK<32, 16, int, float, ",
+   "raw_name": "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __nv_bfloat16, false, float, __nv_bfloat16,",
+   "cat": "misc"
+  },
+  {
+   "lane": 2,
+   "tid": 8254,
+   "start": 41.9521484375,
+   "dur": 9.888,
+   "end": 51.8401484375,
+   "name": "deep_gemm_fp8<(cute::UMMA::Major)0, ",
+   "raw_name": "void deep_gemm::sm100_fp8_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 0u, 2048u, 2048u, 128u, 16u, 128u, ",
+   "cat": "gemm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 44.1279296875,
+   "dur": 2.208,
+   "end": 46.3359296875,
+   "name": "triton_poi_fused__to_copy_mul_0",
+   "raw_name": "triton_poi_fused__to_copy_mul_0",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 46.8154296875,
+   "dur": 2.24,
+   "end": 49.0554296875,
+   "name": "per_token_quant<__nv_bfloat16, __nv_",
+   "raw_name": "void per_token_group_quant_8bit_kernel<__nv_bfloat16, __nv_fp8_e4m3, true, true, unsigned int>(__nv_bfloat16 const*, voi",
+   "cat": "norm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 49.5361328125,
+   "dur": 8.768,
+   "end": 58.3041328125,
+   "name": "deep_gemm_fp8<(cute::UMMA::Major)0, ",
+   "raw_name": "void deep_gemm::sm100_fp8_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 0u, 4096u, 2048u, 128u, 64u, 128u, ",
+   "cat": "gemm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 52.6396484375,
+   "dur": 2.751,
+   "end": 55.3906484375,
+   "name": "per_token_quant<__nv_bfloat16, __nv_",
+   "raw_name": "void per_token_group_quant_8bit_kernel<__nv_bfloat16, __nv_fp8_e4m3, true, true, unsigned int>(__nv_bfloat16 const*, voi",
+   "cat": "norm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 55.87109375,
+   "dur": 8.257,
+   "end": 64.12809375,
+   "name": "deep_gemm_fp8<(cute::UMMA::Major)0, ",
+   "raw_name": "void deep_gemm::sm100_fp8_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 0u, 128u, 6144u, 128u, 16u, 128u, 1",
+   "cat": "gemm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 64.6396484375,
+   "dur": 2.656,
+   "end": 67.2956484375,
+   "name": "void flashinfer::norm::generalLayerN",
+   "raw_name": "void flashinfer::norm::generalLayerNorm<__nv_bfloat162, float2, signed char, true, false>(__nv_bfloat162 const*, float2 ",
+   "cat": "norm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 67.6474609375,
+   "dur": 3.52,
+   "end": 71.1674609375,
+   "name": "indexSelect<float, long, unsigned in",
+   "raw_name": "void at::native::(anonymous namespace)::indexSelectSmallIndex<float, long, unsigned int, 2, 2, -2>(at::cuda::detail::Ten",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 71.51953125,
+   "dur": 1.408,
+   "end": 72.92753125,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::bfloat16_copy_kernel_cuda(at:",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 73.279296875,
+   "dur": 1.248,
+   "end": 74.527296875,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::bfloat16_copy_kernel_cuda(at:",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 74.8798828125,
+   "dur": 3.072,
+   "end": 77.9518828125,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 78.3037109375,
+   "dur": 2.144,
+   "end": 80.4477109375,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 80.767578125,
+   "dur": 1.247,
+   "end": 82.014578125,
+   "name": "vec_elementwise<8, at::native::CUDAF",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 82.3349609375,
+   "dur": 2.145,
+   "end": 84.4799609375,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 84.7998046875,
+   "dur": 2.144,
+   "end": 86.9438046875,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 87.294921875,
+   "dur": 1.185,
+   "end": 88.479921875,
+   "name": "vec_elementwise<8, at::native::CUDAF",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 88.83203125,
+   "dur": 1.856,
+   "end": 90.68803125,
+   "name": "CatArrayBatchedCopy_alignedK_contig<",
+   "raw_name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueTyp",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 91.0400390625,
+   "dur": 1.632,
+   "end": 92.6720390625,
+   "name": "CatArrayBatchedCopy_alignedK_contig<",
+   "raw_name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueTyp",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 93.0234375,
+   "dur": 1.28,
+   "end": 94.3034375,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::bfloat16_copy_kernel_cuda(at:",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 94.6875,
+   "dur": 1.248,
+   "end": 95.9355,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::bfloat16_copy_kernel_cuda(at:",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 96.2880859375,
+   "dur": 1.28,
+   "end": 97.5680859375,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 97.8876953125,
+   "dur": 1.28,
+   "end": 99.1676953125,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 99.3583984375,
+   "dur": 1.089,
+   "end": 100.4473984375,
+   "name": "vec_elementwise<8, at::native::CUDAF",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 100.9921875,
+   "dur": 1.12,
+   "end": 102.1121875,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 102.4638671875,
+   "dur": 1.12,
+   "end": 103.5838671875,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 103.935546875,
+   "dur": 1.088,
+   "end": 105.023546875,
+   "name": "vec_elementwise<8, at::native::CUDAF",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 105.3759765625,
+   "dur": 1.312,
+   "end": 106.6879765625,
+   "name": "CatArrayBatchedCopy_alignedK_contig<",
+   "raw_name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueTyp",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 107.103515625,
+   "dur": 1.248,
+   "end": 108.351515625,
+   "name": "CatArrayBatchedCopy_alignedK_contig<",
+   "raw_name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueTyp",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 108.7041015625,
+   "dur": 2.88,
+   "end": 111.5841015625,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::T",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 111.935546875,
+   "dur": 1.343,
+   "end": 113.278546875,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::T",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 113.85546875,
+   "dur": 1.823,
+   "end": 115.67846875,
+   "name": "void (anonymous namespace)::fast_had",
+   "raw_name": "void (anonymous namespace)::fast_hadamard_transform_kernel<(anonymous namespace)::FastHadamardKernelTraits<16, 7, __nv_b",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 114.111328125,
+   "dur": 1.536,
+   "end": 115.647328125,
+   "name": "void (anonymous namespace)::fast_had",
+   "raw_name": "void (anonymous namespace)::fast_hadamard_transform_kernel<(anonymous namespace)::FastHadamardKernelTraits<16, 7, __nv_b",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 115.9677734375,
+   "dur": 1.6,
+   "end": 117.5677734375,
+   "name": "_act_quant_kernel",
+   "raw_name": "_act_quant_kernel",
+   "cat": "norm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 116.3828125,
+   "dur": 1.953,
+   "end": 118.3358125,
+   "name": "_act_quant_kernel",
+   "raw_name": "_act_quant_kernel",
+   "cat": "norm"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 118.6875,
+   "dur": 1.824,
+   "end": 120.5115,
+   "name": "vec_elementwise<4, at::native::Binar",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<float, float, float, at::native::binary_inte",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 120.83203125,
+   "dur": 1.216,
+   "end": 122.04803125,
+   "name": "vec_elementwise<4, at::native::AUnar",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<4, at::native::AUnaryFunctor<float, float, float, at::native::binary_inte",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 122.3681640625,
+   "dur": 1.471,
+   "end": 123.8391640625,
+   "name": "_set_k_and_s_triton_kernel",
+   "raw_name": "_set_k_and_s_triton_kernel",
+   "cat": "misc"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 124.22265625,
+   "dur": 4.897,
+   "end": 129.11965625,
+   "name": "paged_mqa_logits<1u, 32u, 128u, 64u,",
+   "raw_name": "void deep_gemm::sm100_fp8_paged_mqa_logits<1u, 32u, 128u, 64u, 3u, 3u, 256u, 128u, 512u>(unsigned int, unsigned long, un",
+   "cat": "indexer"
+  },
+  {
+   "lane": 0,
+   "tid": 8251,
+   "start": 129.6953125,
+   "dur": 1.92,
+   "end": 131.6153125,
+   "name": "(anonymous namespace)::topk_transfor",
+   "raw_name": "(anonymous namespace)::topk_transform_decode_kernel((anonymous namespace)::FastTopKParams, int*, int const*, long)",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 132.0,
+   "dur": 2.847,
+   "end": 134.847,
+   "name": "nvjet_gemm_64x8_64x16_4x1_v_bz_TNT",
+   "raw_name": "nvjet_sm100_tst_64x8_64x16_4x1_v_bz_TNT",
+   "cat": "gemm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 135.1669921875,
+   "dur": 2.4,
+   "end": 137.5669921875,
+   "name": "indexSelect<float, long, unsigned in",
+   "raw_name": "void at::native::(anonymous namespace)::indexSelectSmallIndex<float, long, unsigned int, 2, 2, -2>(at::cuda::detail::Ten",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 137.919921875,
+   "dur": 1.216,
+   "end": 139.135921875,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::bfloat16_copy_kernel_cuda(at:",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 139.486328125,
+   "dur": 1.12,
+   "end": 140.606328125,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::bfloat16_copy_kernel_cuda(at:",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 140.9599609375,
+   "dur": 2.783,
+   "end": 143.7429609375,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 144.0625,
+   "dur": 1.953,
+   "end": 146.0155,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 146.3359375,
+   "dur": 1.087,
+   "end": 147.4229375,
+   "name": "vec_elementwise<8, at::native::CUDAF",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 147.7431640625,
+   "dur": 1.953,
+   "end": 149.6961640625,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 150.046875,
+   "dur": 1.92,
+   "end": 151.966875,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 152.3193359375,
+   "dur": 1.023,
+   "end": 153.3423359375,
+   "name": "vec_elementwise<8, at::native::CUDAF",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 153.6953125,
+   "dur": 1.471,
+   "end": 155.1663125,
+   "name": "CatArrayBatchedCopy_alignedK_contig<",
+   "raw_name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueTyp",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 155.7431640625,
+   "dur": 1.248,
+   "end": 156.9911640625,
+   "name": "CatArrayBatchedCopy_alignedK_contig<",
+   "raw_name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueTyp",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 157.310546875,
+   "dur": 0.96,
+   "end": 158.270546875,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::bfloat16_copy_kernel_cuda(at:",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 158.5908203125,
+   "dur": 0.929,
+   "end": 159.5198203125,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::bfloat16_copy_kernel_cuda(at:",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 160.0,
+   "dur": 1.28,
+   "end": 161.28,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 161.630859375,
+   "dur": 1.249,
+   "end": 162.879859375,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 163.23046875,
+   "dur": 1.249,
+   "end": 164.47946875,
+   "name": "vec_elementwise<8, at::native::CUDAF",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 164.8310546875,
+   "dur": 1.28,
+   "end": 166.1110546875,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 166.6865234375,
+   "dur": 1.28,
+   "end": 167.9665234375,
+   "name": "elementwise, at::native::gpu_kernel_",
+   "raw_name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, ",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 168.287109375,
+   "dur": 1.249,
+   "end": 169.536109375,
+   "name": "vec_elementwise<8, at::native::CUDAF",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 169.85546875,
+   "dur": 1.504,
+   "end": 171.35946875,
+   "name": "CatArrayBatchedCopy_alignedK_contig<",
+   "raw_name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueTyp",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 171.6796875,
+   "dur": 1.407,
+   "end": 173.0866875,
+   "name": "CatArrayBatchedCopy_alignedK_contig<",
+   "raw_name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueTyp",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 173.279296875,
+   "dur": 1.375,
+   "end": 174.654296875,
+   "name": "_quantize_k_cache_fast_kernel",
+   "raw_name": "_quantize_k_cache_fast_kernel",
+   "cat": "norm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 174.974609375,
+   "dur": 1.44,
+   "end": 176.414609375,
+   "name": "set_mla_kv_buffer_kernel",
+   "raw_name": "set_mla_kv_buffer_kernel",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 176.734375,
+   "dur": 2.112,
+   "end": 178.846375,
+   "name": "concat_mla_absorb_q_kernel(__nv_bflo",
+   "raw_name": "concat_mla_absorb_q_kernel(__nv_bfloat16*, __nv_bfloat16*, __nv_bfloat16*, int, int, long, int, long, int, long, int)",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 179.19921875,
+   "dur": 12.159,
+   "end": 191.35821875,
+   "name": "flash_mla_sparse<sm100::TmaParams<cu",
+   "raw_name": "void sm100::flash_fwd_splitkv_mla_fp8_sparse_kernel<sm100::TmaParams<cute::tuple<int, int, int, int>, cute::TiledCopy<cu",
+   "cat": "mqa_main"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 191.1982421875,
+   "dur": 15.329,
+   "end": 206.5272421875,
+   "name": "flash_mla_combine<cutlass::bfloat16_",
+   "raw_name": "void flash_fwd_mla_combine_kernel<cutlass::bfloat16_t, 512, 8, 160, 256>(DecodingParams)",
+   "cat": "mqa_main"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 206.3349609375,
+   "dur": 3.873,
+   "end": 210.2079609375,
+   "name": "nvjet_gemm_16x64_64x16_4x1_v_bz_TNN",
+   "raw_name": "nvjet_sm100_tst_16x64_64x16_4x1_v_bz_TNN",
+   "cat": "gemm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 210.55859375,
+   "dur": 2.049,
+   "end": 212.60759375,
+   "name": "per_token_quant<__nv_bfloat16, __nv_",
+   "raw_name": "void per_token_group_quant_8bit_kernel<__nv_bfloat16, __nv_fp8_e4m3, true, true, unsigned int>(__nv_bfloat16 const*, voi",
+   "cat": "norm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 212.958984375,
+   "dur": 10.464,
+   "end": 223.422984375,
+   "name": "deep_gemm_fp8<(cute::UMMA::Major)0, ",
+   "raw_name": "void deep_gemm::sm100_fp8_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 0u, 6144u, 2048u, 128u, 64u, 128u, ",
+   "cat": "gemm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 223.90234375,
+   "dur": 10.432,
+   "end": 234.33434375,
+   "name": "AR<__nv_bfloat16, 8>(sglang::RankDat",
+   "raw_name": "void sglang::cross_device_reduce_1stage<__nv_bfloat16, 8>(sglang::RankData*, sglang::RankSignals, sglang::Signal*, __nv_",
+   "cat": "ar"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 234.271484375,
+   "dur": 3.263,
+   "end": 237.534484375,
+   "name": "FusedAddRMSNorm<8u, __nv_bfloat16>(_",
+   "raw_name": "void flashinfer::norm::FusedAddRMSNormKernel<8u, __nv_bfloat16>(__nv_bfloat16*, __nv_bfloat16*, __nv_bfloat16*, unsigned",
+   "cat": "norm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 238.046875,
+   "dur": 2.4,
+   "end": 240.446875,
+   "name": "per_token_quant<__nv_bfloat16, __nv_",
+   "raw_name": "void per_token_group_quant_8bit_kernel<__nv_bfloat16, __nv_fp8_e4m3, true, true, unsigned int>(__nv_bfloat16 const*, voi",
+   "cat": "norm"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 238.271484375,
+   "dur": 5.823,
+   "end": 244.094484375,
+   "name": "nvjet_gemm_32x64_64x16_4x1_v_bz_spli",
+   "raw_name": "nvjet_sm100_tst_32x64_64x16_4x1_v_bz_splitK_TNN",
+   "cat": "gemm"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 240.9267578125,
+   "dur": 11.68,
+   "end": 252.6067578125,
+   "name": "deep_gemm_fp8<(cute::UMMA::Major)0, ",
+   "raw_name": "void deep_gemm::sm100_fp8_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 0u, 512u, 6144u, 128u, 16u, 128u, 1",
+   "cat": "gemm"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 243.3916015625,
+   "dur": 2.975,
+   "end": 246.3666015625,
+   "name": "cublasLt_splitK<32, 16, int, float, ",
+   "raw_name": "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __nv_bfloat16, false, float, __nv_bfloat16,",
+   "cat": "misc"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 246.8466796875,
+   "dur": 1.92,
+   "end": 248.7666796875,
+   "name": "vec_elementwise<8, at::native::bfloa",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambd",
+   "cat": "misc"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 249.2470703125,
+   "dur": 1.632,
+   "end": 250.8790703125,
+   "name": "_per_token_group_quant_8bit",
+   "raw_name": "_per_token_group_quant_8bit",
+   "cat": "norm"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 251.390625,
+   "dur": 1.792,
+   "end": 253.182625,
+   "name": "void at::native::elementwise_kernel<",
+   "raw_name": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::T",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 253.0869140625,
+   "dur": 2.592,
+   "end": 255.6789140625,
+   "name": "void flashinfer::activation::act_and",
+   "raw_name": "void flashinfer::activation::act_and_mul_kernel<__nv_bfloat16, &(float silu<float>(float const&))>(__nv_bfloat16*, __nv_",
+   "cat": "misc"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 253.6630859375,
+   "dur": 2.88,
+   "end": 256.5430859375,
+   "name": "void at::native::unrolled_elementwis",
+   "raw_name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}:",
+   "cat": "misc"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 255.9990234375,
+   "dur": 2.016,
+   "end": 258.0150234375,
+   "name": "per_token_quant<__nv_bfloat16, __nv_",
+   "raw_name": "void per_token_group_quant_8bit_kernel<__nv_bfloat16, __nv_fp8_e4m3, true, true, unsigned int>(__nv_bfloat16 const*, voi",
+   "cat": "norm"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 257.3427734375,
+   "dur": 4.704,
+   "end": 262.0467734375,
+   "name": "routing_main<moe::dev::routing::rout",
+   "raw_name": "void moe::dev::routing::routingDeepSeek::routingMainKernel<moe::dev::routing::routingDeepSeek::KernelParams<float, __nv_",
+   "cat": "routing"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 258.462890625,
+   "dur": 4.64,
+   "end": 263.102890625,
+   "name": "deep_gemm_fp8<(cute::UMMA::Major)0, ",
+   "raw_name": "void deep_gemm::sm100_fp8_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 0u, 6144u, 256u, 128u, 64u, 128u, 1",
+   "cat": "gemm"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 260.4150390625,
+   "dur": 4.128,
+   "end": 264.5430390625,
+   "name": "routing_idx_cluster<moe::dev::routin",
+   "raw_name": "void moe::dev::routing::routingDeepSeek::routingIndicesClusterKernel<moe::dev::routing::routingDeepSeek::KernelParams<fl",
+   "cat": "routing"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 264.318359375,
+   "dur": 20.128,
+   "end": 284.446359375,
+   "name": "bmm_fp8_t128x8x128u2_s8_et64x8_m64x8",
+   "raw_name": "bmm_E4m3_E4m3E4m3_Fp32_t128x8x128u2_s8_et64x8_m64x8x32_cga1x1x1_16dp256b_rM_TN_transOut_noShflA_dsFp8_schedS_bN_tma_tmaO",
+   "cat": "gemm"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 281.791015625,
+   "dur": 4.288,
+   "end": 286.079015625,
+   "name": "activation_deepseek<moe::dev::activa",
+   "raw_name": "void moe::dev::activation::activationDeepSeekKernel<moe::dev::activation::KernelParams<cutlass::float_e4m3_t, 1, true> >",
+   "cat": "silu"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 282.9111328125,
+   "dur": 15.52,
+   "end": 298.4311328125,
+   "name": "bmm_bf16_fp8_t128x8x128u2_s8_et64x8_",
+   "raw_name": "bmm_Bfloat16_E4m3E4m3_Fp32_t128x8x128u2_s8_et64x8_m64x8x32_cga1x1x1_16dp256b_rM_TN_transOut_noShflA_dsFp8_schedP4x2x2x3_",
+   "cat": "gemm"
+  },
+  {
+   "lane": 3,
+   "tid": 8255,
+   "start": 294.3984375,
+   "dur": 6.656,
+   "end": 301.0544375,
+   "name": "finalize_moe<moe::dev::finalize::Ker",
+   "raw_name": "void moe::dev::finalize::finalizeKernel<moe::dev::finalize::KernelParams<cutlass::bfloat16_t, cutlass::bfloat16_t, 4, tr",
+   "cat": "routed_expert"
+  },
+  {
+   "lane": 1,
+   "tid": 8253,
+   "start": 301.375,
+   "dur": 1.76,
+   "end": 303.135,
+   "name": "vec_elementwise<8, at::native::CUDAF",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(i",
+   "cat": "add"
+  }
+ ],
+ "bubbles": [
+  {
+   "start": 12.3515078125,
+   "end": 12.7041015625,
+   "dur": 0.3525937500000005,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 14.9441015625,
+   "end": 15.263671875,
+   "dur": 0.3195703124999998,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 64.12809375,
+   "end": 64.6396484375,
+   "dur": 0.511554687499995,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 67.2956484375,
+   "end": 67.6474609375,
+   "dur": 0.3518124999999941,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 71.1674609375,
+   "end": 71.51953125,
+   "dur": 0.352070312500004,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 72.92753125,
+   "end": 73.279296875,
+   "dur": 0.35176562499999875,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 74.527296875,
+   "end": 74.8798828125,
+   "dur": 0.35258593749999534,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 77.9518828125,
+   "end": 78.3037109375,
+   "dur": 0.35182812499999727,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 80.4477109375,
+   "end": 80.767578125,
+   "dur": 0.31986718749999454,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 82.014578125,
+   "end": 82.3349609375,
+   "dur": 0.3203828125000001,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 84.4799609375,
+   "end": 84.7998046875,
+   "dur": 0.319843750000004,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 86.9438046875,
+   "end": 87.294921875,
+   "dur": 0.35111718749999454,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 88.479921875,
+   "end": 88.83203125,
+   "dur": 0.3521093749999977,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 90.68803125,
+   "end": 91.0400390625,
+   "dur": 0.35200781250000546,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 92.6720390625,
+   "end": 93.0234375,
+   "dur": 0.351398437499995,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 94.3034375,
+   "end": 94.6875,
+   "dur": 0.38406249999999886,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 95.9355,
+   "end": 96.2880859375,
+   "dur": 0.35258593749999534,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 97.5680859375,
+   "end": 97.8876953125,
+   "dur": 0.31960937499999886,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 99.1676953125,
+   "end": 99.3583984375,
+   "dur": 0.19070312499999886,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 100.4473984375,
+   "end": 100.9921875,
+   "dur": 0.5447890625000014,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 102.1121875,
+   "end": 102.4638671875,
+   "dur": 0.35167968749999545,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 103.5838671875,
+   "end": 103.935546875,
+   "dur": 0.35167968749999545,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 105.023546875,
+   "end": 105.3759765625,
+   "dur": 0.35242968750000614,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 106.6879765625,
+   "end": 107.103515625,
+   "dur": 0.4155390625000024,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 108.351515625,
+   "end": 108.7041015625,
+   "dur": 0.35258593749999534,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 111.5841015625,
+   "end": 111.935546875,
+   "dur": 0.35144531250000455,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 113.278546875,
+   "end": 113.85546875,
+   "dur": 0.5769218749999965,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 115.67846875,
+   "end": 115.9677734375,
+   "dur": 0.2893046875000067,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 118.3358125,
+   "end": 118.6875,
+   "dur": 0.35168749999999704,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 120.5115,
+   "end": 120.83203125,
+   "dur": 0.32053125000000193,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 122.04803125,
+   "end": 122.3681640625,
+   "dur": 0.320132812500006,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 123.8391640625,
+   "end": 124.22265625,
+   "dur": 0.38349218749999636,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 129.11965625,
+   "end": 129.6953125,
+   "dur": 0.5756562500000086,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 131.6153125,
+   "end": 132.0,
+   "dur": 0.3846875000000125,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 134.847,
+   "end": 135.1669921875,
+   "dur": 0.3199921874999916,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 137.5669921875,
+   "end": 137.919921875,
+   "dur": 0.3529296874999943,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 139.135921875,
+   "end": 139.486328125,
+   "dur": 0.3504062499999918,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 140.606328125,
+   "end": 140.9599609375,
+   "dur": 0.35363281249999545,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 143.7429609375,
+   "end": 144.0625,
+   "dur": 0.31953906250001296,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 146.0155,
+   "end": 146.3359375,
+   "dur": 0.32043749999999704,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 147.4229375,
+   "end": 147.7431640625,
+   "dur": 0.3202265625000109,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 149.6961640625,
+   "end": 150.046875,
+   "dur": 0.35071093749999704,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 151.966875,
+   "end": 152.3193359375,
+   "dur": 0.3524609375000125,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 153.3423359375,
+   "end": 153.6953125,
+   "dur": 0.35297656250000387,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 155.1663125,
+   "end": 155.7431640625,
+   "dur": 0.5768515624999964,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 156.9911640625,
+   "end": 157.310546875,
+   "dur": 0.31938281250000955,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 158.270546875,
+   "end": 158.5908203125,
+   "dur": 0.32027343749999204,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 159.5198203125,
+   "end": 160.0,
+   "dur": 0.48017968749999795,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 161.28,
+   "end": 161.630859375,
+   "dur": 0.35085937499999886,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 162.879859375,
+   "end": 163.23046875,
+   "dur": 0.3506093750000048,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 164.47946875,
+   "end": 164.8310546875,
+   "dur": 0.3515859375000048,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 166.1110546875,
+   "end": 166.6865234375,
+   "dur": 0.5754687499999989,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 167.9665234375,
+   "end": 168.287109375,
+   "dur": 0.32058593749999886,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 169.536109375,
+   "end": 169.85546875,
+   "dur": 0.3193593750000048,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 171.35946875,
+   "end": 171.6796875,
+   "dur": 0.3202187500000093,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 173.0866875,
+   "end": 173.279296875,
+   "dur": 0.1926093749999893,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 174.654296875,
+   "end": 174.974609375,
+   "dur": 0.3203125,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 176.414609375,
+   "end": 176.734375,
+   "dur": 0.3197656250000023,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 178.846375,
+   "end": 179.19921875,
+   "dur": 0.35284375000000523,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 210.2079609375,
+   "end": 210.55859375,
+   "dur": 0.35063281250000955,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 212.60759375,
+   "end": 212.958984375,
+   "dur": 0.3513906249999934,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 223.422984375,
+   "end": 223.90234375,
+   "dur": 0.47935937500000136,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 237.534484375,
+   "end": 238.046875,
+   "dur": 0.5123906249999948,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 301.0544375,
+   "end": 301.375,
+   "dur": 0.3205624999999941,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 303.135,
+   "end": 303.486328125,
+   "dur": 0.3513281250000091,
+   "kind": "launch_micro"
+  }
+ ],
+ "summary": {
+  "total_count": 65,
+  "total_dur": 23.70991406250002,
+  "launch_count": 65,
+  "launch_dur": 23.70991406250002,
+  "fence_count": 0,
+  "fence_dur": 0,
+  "stall_count": 0,
+  "stall_dur": 0
+ }
+};
+
+
+const DUAL_R713 = {
+ "layer_dur": 336.7626953125,
+ "stream_count": 4,
+ "rects": [
+  {
+   "tid": 165,
+   "start": 0.0009765625,
+   "dur": 4.799,
+   "end": 4.7998046875,
+   "name": "24add_rmsnorm_quant_kernelIDF16b",
+   "raw_name": "_ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi256ELi24ELb1ELb0ELb1ELi1EEEvPT0_PT_PfS4_S4_S4_diiiiiiib",
+   "cat": "norm",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 4.80078125,
+   "dur": 5.359,
+   "end": 10.15966796875,
+   "name": "37dynamic_per_group_scaled_quant",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 10.16064453125,
+   "dur": 29.36,
+   "end": 39.5205078125,
+   "name": "kernel_gemm_xdl_cshuffle_v3_mult",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b_preshuf",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 157,
+   "start": 11.24072265625,
+   "dur": 8.159,
+   "end": 19.39990234375,
+   "name": "bf16gemm_fp32bf16_tn_32x64_split",
+   "raw_name": "aiter::bf16gemm_fp32bf16_tn_32x64_splitk_clean",
+   "cat": "misc",
+   "lane": 2
+  },
+  {
+   "tid": 157,
+   "start": 19.40087890625,
+   "dur": 7.199,
+   "end": 26.60009765625,
+   "name": "grouped_topk_kernel<>",
+   "raw_name": "void aiter::grouped_topk_kernel<c10::BFloat16, float __vector(4), 1, true, true, false>(c10::BFloat16*, c10::BFloat16 const*, fl",
+   "cat": "misc",
+   "lane": 2
+  },
+  {
+   "tid": 157,
+   "start": 26.60107421875,
+   "dur": 8.6,
+   "end": 35.201171875,
+   "name": "kentry<>",
+   "raw_name": "void ck_tile::kentry<2, ck_tile::MoeSortingKernel<ck_tile::MoeSortingProblemEx<int, float, 1, true, false, false, true, 0> >, ck",
+   "cat": "misc",
+   "lane": 2
+  },
+  {
+   "tid": 157,
+   "start": 35.20166015625,
+   "dur": 5.439,
+   "end": 40.640625,
+   "name": "37dynamic_per_group_scaled_quant",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "indexer",
+   "lane": 2
+  },
+  {
+   "tid": 165,
+   "start": 39.52197265625,
+   "dur": 6.239,
+   "end": 45.7607421875,
+   "name": "_ZN7sgl_hip10activation18act_and",
+   "raw_name": "_ZN7sgl_hip10activation18act_and_mul_kernelI14__hip_bfloat16TnPFT_RKS3_EXadL_Z4siluIS2_ES3_S5_EEEEvPS3_PS4_i",
+   "cat": "silu",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 45.76171875,
+   "dur": 6.559,
+   "end": 52.32080078125,
+   "name": "37dynamic_per_group_scaled_quant",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 157,
+   "start": 46.162109375,
+   "dur": 19.239,
+   "end": 65.40087890625,
+   "name": "kernel_moe_gemm<>",
+   "raw_name": "void ck::kernel_moe_gemm<ck::GridwiseMoeGemmBlockScale<ck::tensor_layout::gemm::RowMajor, ck::tensor_layout::gemm::ColumnMajor, ",
+   "cat": "misc",
+   "lane": 2
+  },
+  {
+   "tid": 165,
+   "start": 52.32177734375,
+   "dur": 11.999,
+   "end": 64.32080078125,
+   "name": "kernel_gemm_xdl_cshuffle_v3_mult",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b_preshuf",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 157,
+   "start": 65.40185546875,
+   "dur": 5.919,
+   "end": 71.32080078125,
+   "name": "18act_and_mul_kernelIfDF16bTnPFf",
+   "raw_name": "_ZN5aiter18act_and_mul_kernelIfDF16bTnPFfRKT_EXadL_ZNS_11silu_kernelIfEEfS3_EELi4EEEvPT0_PS2_i",
+   "cat": "silu",
+   "lane": 2
+  },
+  {
+   "tid": 157,
+   "start": 71.32177734375,
+   "dur": 5.959,
+   "end": 77.28076171875,
+   "name": "37dynamic_per_group_scaled_quant",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "indexer",
+   "lane": 2
+  },
+  {
+   "tid": 157,
+   "start": 77.28173828125,
+   "dur": 9.519,
+   "end": 86.80078125,
+   "name": "kernel_moe_gemm<>",
+   "raw_name": "void ck::kernel_moe_gemm<ck::GridwiseMoeGemmBlockScale<ck::tensor_layout::gemm::RowMajor, ck::tensor_layout::gemm::ColumnMajor, ",
+   "cat": "misc",
+   "lane": 2
+  },
+  {
+   "tid": 165,
+   "start": 92.001953125,
+   "dur": 4.239,
+   "end": 96.24072265625,
+   "name": "vectorized_elementwise_kernel<>",
+   "raw_name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(int, at::",
+   "cat": "add",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 96.24169921875,
+   "dur": 19.199,
+   "end": 115.44091796875,
+   "name": "26cross_device_reduce_1stageIDF1",
+   "raw_name": "_ZN5aiter26cross_device_reduce_1stageIDF16bLi8ELb0EEEvPNS_8RankDataES2_NS_11RankSignalsEPNS_6SignalEPT_ii",
+   "cat": "ar",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 115.44189453125,
+   "dur": 5.199,
+   "end": 120.64111328125,
+   "name": "_fused_rms_fp8_group_quant_kerne",
+   "raw_name": "_fused_rms_fp8_group_quant_kernel",
+   "cat": "norm",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 120.64208984375,
+   "dur": 4.999,
+   "end": 125.64111328125,
+   "name": "elementwise_kernel_manual_unroll",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 125.64208984375,
+   "dur": 14.68,
+   "end": 140.322265625,
+   "name": "kernel_gemm_xdl_cshuffle_v3_mult",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b_preshuf",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 140.32275390625,
+   "dur": 3.959,
+   "end": 144.28173828125,
+   "name": "24add_rmsnorm_quant_kernelIDF16b",
+   "raw_name": "_ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi256ELi8ELb0ELb0ELb1ELi1EEEvPT0_PT_PfS4_S4_S4_diiiiiiib",
+   "cat": "norm",
+   "lane": 0
+  },
+  {
+   "tid": 156,
+   "start": 146.1630859375,
+   "dur": 3.199,
+   "end": 149.3623046875,
+   "name": "24add_rmsnorm_quant_kernelIDF16b",
+   "raw_name": "_ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi64ELi8ELb0ELb0ELb1ELi1EEEvPT0_PT_PfS4_S4_S4_diiiiiiib",
+   "cat": "norm",
+   "lane": 3
+  },
+  {
+   "tid": 165,
+   "start": 155.123046875,
+   "dur": 3.679,
+   "end": 158.80224609375,
+   "name": "37dynamic_per_group_scaled_quant",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 155,
+   "start": 155.203125,
+   "dur": 4.799,
+   "end": 160.001953125,
+   "name": "37dynamic_per_group_scaled_quant",
+   "raw_name": "_ZN5aiter37dynamic_per_group_scaled_quant_kernelIDF16bDB8_Li32EEEvPT0_PfPKT_PKfiliibPKii",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 165,
+   "start": 158.802734375,
+   "dur": 7.919,
+   "end": 166.7216796875,
+   "name": "kernel_gemm_xdl_cshuffle_v3_mult",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b_preshuf",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 155,
+   "start": 160.0029296875,
+   "dur": 7.839,
+   "end": 167.841796875,
+   "name": "kernel_gemm_xdl_cshuffle_v3_mult",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b_preshuf",
+   "cat": "gemm",
+   "lane": 1
+  },
+  {
+   "tid": 165,
+   "start": 166.72265625,
+   "dur": 5.519,
+   "end": 172.24169921875,
+   "name": "_batched_gemm_a8w8_a_per_token_g",
+   "raw_name": "_batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant_kernel_HAS_BIAS_0_BLOCK_SIZE_M_16_BLOCK_SIZE_N_128_BLOC",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 155,
+   "start": 167.8427734375,
+   "dur": 4.519,
+   "end": 172.36181640625,
+   "name": "elementwise_kernel_manual_unroll",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda",
+   "cat": "misc",
+   "lane": 1
+  },
+  {
+   "tid": 165,
+   "start": 172.24267578125,
+   "dur": 3.759,
+   "end": 176.00146484375,
+   "name": "_fused_qk_rope_cat_and_cache_mla",
+   "raw_name": "_fused_qk_rope_cat_and_cache_mla_kernel",
+   "cat": "indexer",
+   "lane": 0
+  },
+  {
+   "tid": 155,
+   "start": 172.36279296875,
+   "dur": 14.159,
+   "end": 186.52197265625,
+   "name": "kernel_gemm_xdl_cshuffle_v3_mult",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b_preshuf",
+   "cat": "gemm",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 186.52294921875,
+   "dur": 6.719,
+   "end": 193.2421875,
+   "name": "6kentryILi1ENS_14Layernorm2dFwdI",
+   "raw_name": "_ZN7ck_tile6kentryILi1ENS_14Layernorm2dFwdINS_29Layernorm2dFwdPipelineOnePassINS_29Layernorm2dFwdPipelineProblemIDF16bDF16bDF16b",
+   "cat": "norm",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 193.24267578125,
+   "dur": 9.039,
+   "end": 202.28173828125,
+   "name": "kn_entry_2c_sbhd_cached_indirect",
+   "raw_name": "void aiter::kn_entry_2c_sbhd_cached_indirect_inplace<aiter::OpCachedFwd, 1, true, false, true, true, 1, true, c10::BFloat16, c10",
+   "cat": "norm",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 202.28271484375,
+   "dur": 4.759,
+   "end": 207.04150390625,
+   "name": "fast_hadamard_transform_kernel<>",
+   "raw_name": "void fast_hadamard_transform_kernel<fast_hadamard_transform_kernel_traits<16, 7, c10::BFloat16> >(HadamardParamsBase)",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 207.04296875,
+   "dur": 5.599,
+   "end": 212.64208984375,
+   "name": "fast_hadamard_transform_kernel<>",
+   "raw_name": "void fast_hadamard_transform_kernel<fast_hadamard_transform_kernel_traits<16, 7, c10::BFloat16> >(HadamardParamsBase)",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 212.64306640625,
+   "dur": 5.919,
+   "end": 218.56201171875,
+   "name": "act_quant_kernel__kernel",
+   "raw_name": "act_quant_kernel__kernel",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 218.56298828125,
+   "dur": 6.799,
+   "end": 225.36181640625,
+   "name": "32indexer_k_quant_and_cache_kern",
+   "raw_name": "_ZN5aiter32indexer_k_quant_and_cache_kernelIDF16bDB8_LN4vllm18Fp8KVCacheDataTypeE1ELi8ELi8ELi16EEEvPKT_PT0_PKliiiiibb",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 225.36279296875,
+   "dur": 6.439,
+   "end": 231.8017578125,
+   "name": "wv_splitk_small_fp16_bf16_kernel",
+   "raw_name": "void aiter::wv_splitk_small_fp16_bf16_kernel<__hip_bfloat16, 64, 1, 1, 8, 4, 4>(int, int, __hip_bfloat16 const*, __hip_bfloat16 ",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 231.802734375,
+   "dur": 6.12,
+   "end": 237.9228515625,
+   "name": "triton_poi_fused_mul_unsqueeze_0",
+   "raw_name": "triton_poi_fused_mul_unsqueeze_0",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 237.923828125,
+   "dur": 6.279,
+   "end": 244.20263671875,
+   "name": "_gluon_deepgemm_fp8_paged_mqa_lo",
+   "raw_name": "_gluon_deepgemm_fp8_paged_mqa_logits_preshuffle",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 155,
+   "start": 244.2041015625,
+   "dur": 13.839,
+   "end": 258.04296875,
+   "name": "FastTopKParams, int*, int const*",
+   "raw_name": "(anonymous namespace)::topk_transform_decode_kernel((anonymous namespace)::FastTopKParams, int*, int const*, long)",
+   "cat": "indexer",
+   "lane": 1
+  },
+  {
+   "tid": 165,
+   "start": 263.40380859375,
+   "dur": 12.519,
+   "end": 275.9228515625,
+   "name": "main_kernel",
+   "raw_name": "main_kernel",
+   "cat": "mqa_main",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 275.923828125,
+   "dur": 9.359,
+   "end": 285.28271484375,
+   "name": "main_kernel",
+   "raw_name": "main_kernel",
+   "cat": "mqa_main",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 285.28369140625,
+   "dur": 6.759,
+   "end": 292.04248046875,
+   "name": "_batched_gemm_a8w8_a_per_token_g",
+   "raw_name": "_batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant_kernel_HAS_BIAS_0_BLOCK_SIZE_M_16_BLOCK_SIZE_N_128_BLOC",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 292.0439453125,
+   "dur": 6.119,
+   "end": 298.1630859375,
+   "name": "_fused_flatten_fp8_group_quant_k",
+   "raw_name": "_fused_flatten_fp8_group_quant_kernel",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 298.1640625,
+   "dur": 5.719,
+   "end": 303.88330078125,
+   "name": "elementwise_kernel_manual_unroll",
+   "raw_name": "void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda",
+   "cat": "misc",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 303.8837890625,
+   "dur": 7.559,
+   "end": 311.44287109375,
+   "name": "kernel_gemm_xdl_cshuffle_v3_mult",
+   "raw_name": "void ck::kernel_gemm_xdl_cshuffle_v3_multi_d_blockscale_b_preshuffle<ck::GridwiseGemmMultiD_blockscale_xdl_cshuffle_v3_b_preshuf",
+   "cat": "gemm",
+   "lane": 0
+  },
+  {
+   "tid": 165,
+   "start": 311.44384765625,
+   "dur": 25.319,
+   "end": 336.7626953125,
+   "name": "26cross_device_reduce_1stageIDF1",
+   "raw_name": "_ZN5aiter26cross_device_reduce_1stageIDF16bLi8ELb0EEEvPNS_8RankDataES2_NS_11RankSignalsEPNS_6SignalEPT_ii",
+   "cat": "ar",
+   "lane": 0
+  }
+ ],
+ "bubbles": [
+  {
+   "start": 4.7999765625,
+   "dur": 0.0008046874999996234,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 10.15978125,
+   "dur": 0.0008632812500000142,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 45.76097265625,
+   "dur": 0.0007460937500027853,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 65.401109375,
+   "dur": 0.0007460937499956799,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 71.32085546875,
+   "dur": 0.0009218750000030695,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 77.28077734375,
+   "dur": 0.0009609374999968168,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 86.80073828125,
+   "dur": 5.2012148437499945,
+   "kind": "real_stall"
+  },
+  {
+   "start": 96.240953125,
+   "dur": 0.0007460937499956799,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 115.44069921875,
+   "dur": 0.0011953125000019327,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 120.64089453125,
+   "dur": 0.0011953125000019327,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 125.64108984375,
+   "dur": 0.0010000000000047748,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 140.32208984375,
+   "dur": 0.0006640624999931788,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 144.28175390625,
+   "dur": 1.8813320312499968,
+   "kind": "small_fence"
+  },
+  {
+   "start": 149.3620859375,
+   "dur": 5.760960937499988,
+   "kind": "real_stall"
+  },
+  {
+   "start": 186.52179296875,
+   "dur": 0.0011562500000081855,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 193.24194921875,
+   "dur": 0.0007265625000059117,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 202.28167578125,
+   "dur": 0.001039062500012733,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 207.04171484375001,
+   "dur": 0.001253906249985448,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 212.64196875,
+   "dur": 0.0010976562500104592,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 218.56206640625,
+   "dur": 0.0009218749999888587,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 225.36198828125,
+   "dur": 0.0008046874999934062,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 231.80179296875,
+   "dur": 0.0009414062500070486,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 237.922734375,
+   "dur": 0.0010937499999954525,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 244.202828125,
+   "dur": 0.001273437500003638,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 258.0431015625,
+   "dur": 5.360707031250001,
+   "kind": "real_stall"
+  },
+  {
+   "start": 275.92280859375,
+   "dur": 0.001019531249994543,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 285.282828125,
+   "dur": 0.0008632812500195541,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 292.04269140625,
+   "dur": 0.001253906249985448,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 298.1629453125,
+   "dur": 0.0011171874999718057,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 303.8830625,
+   "dur": 0.0007265625000059117,
+   "kind": "launch_micro"
+  },
+  {
+   "start": 311.4427890625,
+   "dur": 0.0010585937499740794,
+   "kind": "launch_micro"
+  }
+ ],
+ "bubble_summary": {
+  "total_us": 18.231230468749914,
+  "real_stall_us": 16.322882812499984,
+  "small_fence_us": 1.8813320312499968,
+  "sub1_us": 0.02619140624995797,
+  "n_real_stalls": 3
+ }
+};
+
+// Color mapping by category
+const COLOR = {
+  ar:            '#f5a623',
+  indexer:       '#4a7099',
+  gemm:          '#5fa7a8',
+  routed_expert: '#7e6ee8',
+  shared_expert: '#6ee7b7',
+  silu:          '#f5d36b',
+  mqa_main:      '#f08c8c',
+  norm:          '#7d8595',
+  routing:       '#9aa3b0',
+  fused_kernel:  '#69bd9b',
+  add:           '#aab1bb',
+  misc:          '#5e6470',
+};
+
+// Time scale: 4 px = 1 us
+const PX_PER_US = 4;
+const ROW_HEIGHT = 36;
+const STREAM_HEIGHT = 30;
+
+function drawTimeline() {
+  const svg = document.getElementById('timeline');
+  const ttip = document.getElementById('ttip');
+
+  // Axis ticks
+  const axisG = svg.querySelector('g[transform="translate(150, 18)"] .axis-label');
+  const axisParent = svg.querySelector('g[transform="translate(150, 18)"]');
+  for (let t = 0; t <= 380; t += 25) {
+    const x = t * PX_PER_US;
+    const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    tick.setAttribute('x1', x); tick.setAttribute('x2', x);
+    tick.setAttribute('y1', 9); tick.setAttribute('y2', 18);
+    tick.setAttribute('class', 'axis-tick');
+    axisParent.appendChild(tick);
+    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    txt.setAttribute('x', x); txt.setAttribute('y', 7);
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('class', 'axis-label');
+    txt.textContent = t;
+    axisParent.appendChild(txt);
+  }
+
+  function laneOf(r) { return (r.lane !== undefined) ? r.lane : r.stream; }
+
+  function drawRow(rowG, rects, height, laneFilter) {
+    // background
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('x', 0); bg.setAttribute('y', 0);
+    bg.setAttribute('width', 1480); bg.setAttribute('height', height);
+    bg.setAttribute('class', 'timeline-bg');
+    rowG.appendChild(bg);
+
+    rects.filter(r => laneFilter == null || laneOf(r) === laneFilter).forEach(r => {
+      const x = r.start * PX_PER_US;
+      const w = Math.max(r.dur * PX_PER_US, 1.0); // min visible width
+      const y = 0;
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', x); rect.setAttribute('y', y);
+      rect.setAttribute('width', w); rect.setAttribute('height', height);
+      rect.setAttribute('fill', COLOR[r.cat] || COLOR.misc);
+      rect.setAttribute('class', 'kernel-rect');
+      rect.dataset.name = r.name;
+      rect.dataset.raw = r.raw_name;
+      rect.dataset.dur = r.dur.toFixed(2);
+      rect.dataset.start = r.start.toFixed(2);
+      rect.dataset.cat = r.cat;
+      rect.addEventListener('mouseenter', showTtip);
+      rect.addEventListener('mouseleave', hideTtip);
+      rowG.appendChild(rect);
+      if (r.cat === 'ar') {
+        const out = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        out.setAttribute('x', x - 1); out.setAttribute('y', y - 2);
+        out.setAttribute('width', w + 2); out.setAttribute('height', height + 4);
+        out.setAttribute('class', 'ar-highlight');
+        rowG.appendChild(out);
+      }
+    });
+  }
+
+  // Draw bubbles: real_stall = red, small_fence = amber, launch_micro = subtle (or skip)
+  function drawBubbles(bubbleG, bubbles, topY, totalH, opts) {
+    const showMicro = opts && opts.showMicro;
+    bubbles.forEach((b, i) => {
+      const kind = b.kind || (b.dur >= 2.0 ? 'real_stall' : (b.dur >= 1.0 ? 'small_fence' : 'launch_micro'));
+      if (kind === 'launch_micro' && !showMicro) return;
+      const x = b.start * PX_PER_US;
+      const w = Math.max(b.dur * PX_PER_US, 1.0);
+      let fillColor, strokeColor, patternId;
+      if (kind === 'real_stall') {
+        fillColor = 'rgba(255,82,82,0.14)';
+        strokeColor = '#ff5252';
+        patternId = 'bubble-stripes';
+      } else if (kind === 'small_fence') {
+        fillColor = 'rgba(245,166,35,0.12)';
+        strokeColor = '#f5a623';
+        patternId = 'fence-stripes';
+      } else {
+        // launch micro — very subtle if shown
+        fillColor = 'rgba(121,192,255,0.08)';
+        strokeColor = '#79c0ff';
+        patternId = null;
+      }
+      const fill = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      fill.setAttribute('x', x); fill.setAttribute('y', topY);
+      fill.setAttribute('width', w); fill.setAttribute('height', totalH);
+      fill.setAttribute('fill', fillColor);
+      bubbleG.appendChild(fill);
+      if (patternId) {
+        const stripe = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        stripe.setAttribute('x', x); stripe.setAttribute('y', topY);
+        stripe.setAttribute('width', w); stripe.setAttribute('height', totalH);
+        stripe.setAttribute('fill', `url(#${patternId})`);
+        stripe.setAttribute('opacity', '0.55');
+        bubbleG.appendChild(stripe);
+      }
+      const border = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      border.setAttribute('x', x); border.setAttribute('y', topY);
+      border.setAttribute('width', w); border.setAttribute('height', totalH);
+      border.setAttribute('fill', 'none');
+      border.setAttribute('stroke', strokeColor);
+      border.setAttribute('stroke-width', kind === 'launch_micro' ? '0.4' : '1.5');
+      border.setAttribute('stroke-dasharray', '4 2');
+      bubbleG.appendChild(border);
+    });
+    // duration labels — rendered AFTER all bubbles to allow collision detection
+    const labels = bubbles
+      .filter(b => (b.kind || (b.dur >= 2.0 ? 'real_stall' : (b.dur >= 1.0 ? 'small_fence' : 'launch_micro'))) !== 'launch_micro' && b.dur >= 1.0)
+      .map(b => {
+        const kind = b.kind || (b.dur >= 2.0 ? 'real_stall' : 'small_fence');
+        return {
+          centerX: (b.start + b.dur / 2) * PX_PER_US,
+          text: `${b.dur.toFixed(1)}µs ${kind === 'real_stall' ? 'STALL' : 'fence'}`,
+          color: kind === 'real_stall' ? '#ff5252' : '#f5a623',
+        };
+      })
+      .sort((a, b) => a.centerX - b.centerX);
+    let lastX = -1000;
+    let row = 0;
+    labels.forEach(L => {
+      const labelHalfW = L.text.length * 3.2;
+      if (L.centerX - labelHalfW < lastX + 4) {
+        row = (row + 1) % 2;
+      } else {
+        row = 0;
+      }
+      lastX = L.centerX + labelHalfW;
+      const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      lbl.setAttribute('x', L.centerX);
+      lbl.setAttribute('y', topY + totalH + 12 + row * 13);
+      lbl.setAttribute('text-anchor', 'middle');
+      lbl.setAttribute('class', 'bubble-label');
+      lbl.style.fill = L.color;
+      lbl.textContent = L.text;
+      bubbleG.appendChild(lbl);
+    });
+  }
+
+  // helper: AR labels — render INSIDE the rect (white-on-amber) when wide enough,
+  // otherwise above the row at given y offset
+  function drawArLabels(rowG, rects, rowHeight, fallbackY) {
+    rects.filter(r => r.cat === 'ar').forEach(r => {
+      const x = r.start * PX_PER_US;
+      const w = Math.max(r.dur * PX_PER_US, 1.0);
+      const txt = `AR ${r.dur.toFixed(1)}µs`;
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      const labelW = txt.length * 5.5;  // approximate width
+      if (w >= labelW + 4) {
+        // fits inside — center it, dark text
+        t.setAttribute('x', x + w / 2);
+        t.setAttribute('y', rowHeight / 2 + 3);
+        t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('class', 'ar-text');
+        t.style.fill = '#1a1612';   // dark on amber
+        t.style.fontWeight = '600';
+        t.textContent = txt;
+      } else {
+        // too narrow — put above
+        t.setAttribute('x', x);
+        t.setAttribute('y', fallbackY);
+        t.setAttribute('class', 'ar-text');
+        t.textContent = txt;
+      }
+      rowG.appendChild(t);
+    });
+  }
+
+  // -------- ROW 1: MI355X baseline --------
+  const rowBase = svg.querySelector('#row-baseline');
+  drawRow(rowBase, BASELINE.rects, ROW_HEIGHT);
+  drawArLabels(rowBase, BASELINE.rects, ROW_HEIGHT, -5);
+
+  // -------- ROW 2: MI355X dual stream (2 lanes) --------
+  const rowCur = svg.querySelector('#row-dual-cur');
+  drawRow(rowCur, DUAL.rects, STREAM_HEIGHT, 0);
+  const rowAlt = svg.querySelector('#row-dual-alt');
+  drawRow(rowAlt, DUAL.rects, STREAM_HEIGHT, 1);
+  // AR labels for dual — render inside rect on the lane it lives in
+  DUAL.rects.filter(r => r.cat === 'ar').forEach(r => {
+    const lane = laneOf(r) === 0 ? rowCur : rowAlt;
+    const x = r.start * PX_PER_US;
+    const w = Math.max(r.dur * PX_PER_US, 1.0);
+    const txt = `AR ${r.dur.toFixed(1)}µs`;
+    const labelW = txt.length * 5.5;
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    if (w >= labelW + 4) {
+      t.setAttribute('x', x + w / 2);
+      t.setAttribute('y', STREAM_HEIGHT / 2 + 3);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('class', 'ar-text');
+      t.style.fill = '#1a1612';
+      t.style.fontWeight = '600';
+    } else {
+      t.setAttribute('x', x);
+      t.setAttribute('y', laneOf(r) === 0 ? -5 : STREAM_HEIGHT + 18);
+      t.setAttribute('class', 'ar-text');
+    }
+    t.textContent = txt;
+    lane.appendChild(t);
+  });
+  // bubble overlay for dual
+  const bubbleG = svg.querySelector('#row-dual-bubbles');
+  const dualTopY = 10;          // relative to row-dual-bubbles transform y=180
+  const dualTotalH = (240 - 190) + STREAM_HEIGHT;  // 50 (cur->alt offset) + 30 = 80
+  drawBubbles(bubbleG, DUAL.bubbles, dualTopY, dualTotalH, { showMicro: false });
+
+  // -------- ROW 3: B200 (4 lanes from CUDA-graph stream pool) --------
+  const B200_LANE_HEIGHT = 22;
+  const b200Lanes = [
+    svg.querySelector('#row-b200-l0'),
+    svg.querySelector('#row-b200-l1'),
+    svg.querySelector('#row-b200-l2'),
+    svg.querySelector('#row-b200-l3'),
+  ];
+  for (let i = 0; i < 4; i++) {
+    drawRow(b200Lanes[i], B200.rects, B200_LANE_HEIGHT, i);
+  }
+  // AR labels for B200 — render inside rect when wide enough
+  B200.rects.filter(r => r.cat === 'ar').forEach(r => {
+    const i = laneOf(r);
+    const x = r.start * PX_PER_US;
+    const w = Math.max(r.dur * PX_PER_US, 1.0);
+    const txt = `AR ${r.dur.toFixed(1)}µs`;
+    const labelW = txt.length * 5.5;
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    if (w >= labelW + 4) {
+      t.setAttribute('x', x + w / 2);
+      t.setAttribute('y', B200_LANE_HEIGHT / 2 + 3);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('class', 'ar-text');
+      t.style.fill = '#1a1612';
+      t.style.fontWeight = '600';
+    } else {
+      t.setAttribute('x', x);
+      t.setAttribute('y', -3);
+      t.setAttribute('class', 'ar-text');
+      t.style.fill = '#79c0ff';
+    }
+    t.textContent = txt;
+    b200Lanes[i].appendChild(t);
+  });
+  // B200 bubbles — show all sub-1us as subtle azure tint to communicate "65 micro-gaps, all <1us"
+  const b200BubbleG = svg.querySelector('#row-b200-bubbles');
+  const b200TopY = 10;       // relative to row-b200-bubbles transform y=355
+  const b200TotalH = (440 - 365) + B200_LANE_HEIGHT;  // 75 + 22 = 97 covers all 4 lanes
+  drawBubbles(b200BubbleG, B200.bubbles, b200TopY, b200TotalH, { showMicro: false });
+
+  // ---- R713 (MI355X dual-stream + ROCm 7.13, 4 streams) ----
+  // Uses lanes 0..3 from DUAL_R713.rects
+  const R713_LANE_HEIGHT = 22;
+  const r713Lanes = [
+    svg.querySelector('#row-r713-l0'),
+    svg.querySelector('#row-r713-l1'),
+    svg.querySelector('#row-r713-l2'),
+    svg.querySelector('#row-r713-l3'),
+  ];
+  for (let i = 0; i < 4; i++) {
+    drawRow(r713Lanes[i], DUAL_R713.rects, R713_LANE_HEIGHT, i);
+  }
+  const r713BubbleG = svg.querySelector('#row-r713-bubbles');
+  const r713TopY = 10;       // relative to row-r713-bubbles transform y=585
+  const r713TotalH = (670 - 595) + R713_LANE_HEIGHT;  // span all 4 R713 lanes
+  drawBubbles(r713BubbleG, DUAL_R713.bubbles, r713TopY, r713TotalH, { showMicro: false });
+}
+
+function showTtip(e) {
+  const ttip = document.getElementById('ttip');
+  const r = e.target;
+  ttip.innerHTML = `
+    <div class="tt-name">${r.dataset.name}</div>
+    <div class="tt-meta">duration: ${r.dataset.dur} µs · starts at ${r.dataset.start} µs · cat: ${r.dataset.cat}</div>
+    <div class="tt-meta" style="font-size:9.5px;margin-top:4px;color:#5a5d65">${r.dataset.raw}</div>
+  `;
+  ttip.classList.add('show');
+  ttip.style.left = (e.clientX + 14) + 'px';
+  ttip.style.top  = (e.clientY + 14) + 'px';
+  document.addEventListener('mousemove', moveTtip);
+}
+function moveTtip(e) {
+  const ttip = document.getElementById('ttip');
+  ttip.style.left = (e.clientX + 14) + 'px';
+  ttip.style.top  = (e.clientY + 14) + 'px';
+}
+function hideTtip() {
+  const ttip = document.getElementById('ttip');
+  ttip.classList.remove('show');
+  document.removeEventListener('mousemove', moveTtip);
+}
+
+drawTimeline();
+
+// Zoom controls
+document.querySelectorAll('.zoom-bar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.zoom-bar button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const w = parseInt(btn.dataset.zoom, 10);
+    const svg = document.getElementById('timeline');
+    if (w === 0) {
+      svg.style.minWidth = '';   // fit to screen
+    } else {
+      svg.style.minWidth = w + 'px';
+    }
+  });
+});
+</script>
+</main>
+</body>
+</html>

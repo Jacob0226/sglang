@@ -1,0 +1,238 @@
+[INFO] Step 1: Loading graph-ON trace: results/nvidia_GLM-5.2-NVFP4/lmsysorg_sglang-dev-glm52-nvfp4/prof-TP4_0710/prof_in1024_out16_conc64_p128/in1024_out16_conc64_p128-NV-TP-0-DECODE.trace.json.gz
+[INFO] Kernels spread across 45 streams (top stream has 46% of 12487 kernels); collecting ALL streams.
+[INFO] Found 12487 kernels on all streams
+[INFO] Step 1 written to: Analysis/B200/step1_kernel_stats.xlsx
+[INFO] Step 2: Loading graph-OFF trace: results/nvidia_GLM-5.2-NVFP4/lmsysorg_sglang-dev-glm52-nvfp4/prof-TP4_0710/no-cuda-graph/prof_in1024_out16_conc64_p64/in1024_out16_conc64_p64-NV-TP-0-DECODE-NoGraph.trace.json.gz
+[INFO] Found 12395 kernels on stream 132
+[INFO] Found nn.Module: DeepseekV2DecoderLayer (78 layers per forward pass)
+[INFO] Sub-module classes: DeepseekV2AttentionMLA, DeepseekV2MLP, DeepseekV2MoE
+[INFO] Recovered 1208 unlinked kernels via GPU-timestamp interpolation
+[INFO] Skipping 7445 kernels outside decoder-layer GPU window (inter-layer / post-layer ops)
+[INFO] Resolving call sites for 60 kernels...
+
+========================================================================================================================
+ Step 1: Kernel Statistics (cuda-graph-ON)
+ Total: 12487 kernel calls, 124.296 ms
+========================================================================================================================
+  Kernel Name                                                                       Count    Sum(us)    Avg(us)    Pct
+  -------------------------------------------------------------------------------- ------ ---------- ---------- ------
+  bmm_E2m1_E2m1E2m1_Fp32_Ab16_Bb16_Cb16_t128x16x512_s5_et128x16_m128x16x64_c1x1x1_    375    35598.9       94.9  28.6%
+  bmm_Bfloat16_E2m1E2m1_Fp32_Ab16_Bb16_t128x16x512_s5_et128x16_m256x16x64_c2x1x1_r    375    19260.7       51.4  15.5%
+  fmhaSm100fKernel_QkvE4m3OBfloat16HQk576HV512PagedKvDenseStaticTokenSparseP1Multi    390     7787.5       20.0   6.3%
+  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_splitK_TNT                                855     6525.0        7.6   5.2%
+  void flashinfer::trtllm_mnnvl_allreduce::rmsNormLamport<__nv_bfloat16, __nv_bflo    775     5986.6        7.7   4.8%
+  nvjet_sm100_tst_64x32_64x16_2x1_2cta_v_bz_splitK_TNT                                390     5617.1       14.4   4.5%
+  nvjet_sm100_tst_64x64_64x13_4x1_v_bz_TNT                                            405     5480.8       13.5   4.4%
+  void flashinfer::trtllm_mnnvl_allreduce::twoshotAllreduceKernel<(unsigned char)4    775     5311.0        6.9   4.3%
+  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_TNT                                       885     4853.3        5.5   3.9%
+  void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __n   1245     4312.8        3.5   3.5%
+  void moe::dev::finalize::finalizeKernelVecLoad<moe::dev::finalize::KernelParams<    375     2575.3        6.9   2.1%
+  nvjet_sm100_tst_48x64_64x15_4x1_v_bz_TNN                                            390     1976.0        5.1   1.6%
+  void moe::dev::routing::routingCustom::routingIndicesClusterKernel<moe::dev::rou    375     1955.0        5.2   1.6%
+  void flashinfer::RopeQuantizeKernel<true, 16u, 1u, __nv_bfloat16, long, __nv_fp8    390     1592.7        4.1   1.3%
+  nvjet_sm100_tst_128x32_64x11_2x2_2cta_h_bz_TNT                                      390     1564.3        4.0   1.3%
+  void moe::dev::routing::routingCustom::routingIndicesBlockScoresKernel<moe::dev:    375     1396.3        3.7   1.1%
+  _fused_dsa_decode_metadata_kernel                                                     5     1366.3      273.3   1.1%
+  kernel_cutlass_kernel_flashinfernormkernelsrmsnormRMSNormKernel_object_at__tenso    390     1344.0        3.4   1.1%
+  void (anonymous namespace)::act_and_mul_kernel<__nv_bfloat16, ((anonymous namesp    390     1287.4        3.3   1.0%
+  kernel_cutlass_kernel_flashinferquantizationkernelsnvfp4_quantizeNVFP4QuantizeLi    375      994.5        2.7   0.8%
+  void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c1    375      788.3        2.1   0.6%
+  set_mla_kv_buffer_kernel                                                            390      731.1        1.9   0.6%
+  kernel_cutlass_kernel_flashinfernormkernelsrmsnormRMSNormKernel_object_at__tenso    390      716.6        1.8   0.6%
+  void deep_gemm::sm100_paged_mqa_logits<false, 1u, 32u, 128u, 64u, true, false, 3    105      692.8        6.6   0.6%
+  void (anonymous namespace)::all_reduce_one_shot_push_kernel<__nv_bfloat16, 4u, t     10      559.0       55.9   0.4%
+  nvjet_sm100_tss_64x32_64x16_1x2_h_bz_splitK_TNT                                     105      483.5        4.6   0.4%
+  void (anonymous namespace)::fast_hadamard_transform_kernel<(anonymous namespace)    210      420.5        2.0   0.3%
+  nvjet_sm100_tst_320x64_64x4_2x1_2cta_v_bz_TNT                                         5      394.4       78.9   0.3%
+  void cublasLt::splitKreduce_kernel<32, 16, int, float, float, float, float, fals    105      360.8        3.4   0.3%
+  void (anonymous namespace)::fused_rope_kernel<false, 64l, true, __nv_bfloat16, l    105      262.2        2.5   0.2%
+  (anonymous namespace)::topk_transform_decode_kernel((anonymous namespace)::FastT    105      249.1        2.4   0.2%
+  _act_quant_kernel                                                                   105      232.3        2.2   0.2%
+  void (anonymous namespace)::fused_store_indexer_cache<__nv_bfloat16, long, 6u, t    105      211.9        2.0   0.2%
+  triton_poi_fused_mul_unsqueeze_0                                                    105      208.8        2.0   0.2%
+  kernel_cutlass_kernel_flashinfernormkernelslayernormLayerNormKernel_object_at__t    105      201.5        1.9   0.2%
+  _all_gather_kernel_inner                                                              5      176.3       35.3   0.1%
+  triton_poi_fused_mul_0                                                              105      158.5        1.5   0.1%
+  void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda      5      125.0       25.0   0.1%
+  void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::A      5       95.4       19.1   0.1%
+  void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_     20       72.8        3.6   0.1%
+  void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda     12       67.9        5.7   0.1%
+  kernel_cutlass_kernel_flashinfernormkernelsfused_add_rmsnormFusedAddRMSNormKerne      5       52.4       10.5   0.0%
+  void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<a      5       36.7        7.3   0.0%
+  void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<a     10       24.2        2.4   0.0%
+  void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda      5       24.0        4.8   0.0%
+  void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<a      5       23.2        4.6   0.0%
+  kernel_cutlass_kernel_flashinfernormkernelsrmsnormRMSNormKernel_object_at__tenso      5       18.5        3.7   0.0%
+  void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a      5       17.3        3.5   0.0%
+  alloc_decode_kernel                                                                   5       16.3        3.3   0.0%
+  void deep_gemm::sched::sm100_paged_mqa_logits_metadata<1u, true, false, 1u, 256u      5       16.2        3.2   0.0%
+  void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctorOnSelf_      5       15.0        3.0   0.0%
+  void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<a      5       14.4        2.9   0.0%
+  void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, lo      5       11.6        2.3   0.0%
+  void at::native::(anonymous namespace)::multi_tensor_apply_kernel<at::native::(a      5        9.0        1.8   0.0%
+  triton_poi_fused_add_bitwise_and_bitwise_not_bitwise_or_ge_lt_mul_sub_0               5        8.8        1.8   0.0%
+  void (anonymous namespace)::clamp_position_kernel<long>(long*, long const*, unsi      5        8.5        1.7   0.0%
+  void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>      5        5.6        1.1   0.0%
+========================================================================================================================
+
+
+====================================================================================================
+ Step 2: Layer Structure (cuda-graph-OFF)
+ Model Layer: DeepseekV2DecoderLayer
+ Layers per forward pass: 78
+ Distinct layer types: 2
+====================================================================================================
+
+  Type A: 3 layers
+  Layers: DeepseekV2DecoderLayer_0, DeepseekV2DecoderLayer_1, DeepseekV2DecoderLayer_2
+  Sub-modules: DeepseekV2AttentionMLA + DeepseekV2MLP
+
+  Type B: 75 layers
+  Layers: DeepseekV2DecoderLayer_3 .. DeepseekV2DecoderLayer_77
+  Sub-modules: DeepseekV2AttentionMLA + DeepseekV2MoE
+
+====================================================================================================
+
+
+====================================================================================================
+ Step 3: Layer Kernel Breakdown
+====================================================================================================
+
+  Type A (3 layers): DeepseekV2AttentionMLA + DeepseekV2MLP
+  ------------------------------------------------------------------------------------------
+    #  Detail                                      Duration  Kernel Name  (graph-ON avg)
+  ---  ----------------------------------------  ----------  --------------------------------------------------
+  ---- prepare_attn_and_capture_last_layer_outputs ----
+    0  trtllm_mnnvl_ar.py(265)                     338.6 us  void flashinfer::trtllm_mnnvl_allreduce::twoshotAllreduceKer          6.9 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/flashinfer_comm_fusion.py(720): flashinfer_allreduce_residual_rmsnorm
+    1  (self)                                      336.1 us  void flashinfer::trtllm_mnnvl_allreduce::rmsNormLamport<__nv          7.7 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/flashinfer_comm_fusion.py(720): flashinfer_allreduce_residual_rmsnorm
+                                       Subtotal    674.8 us
+
+  ---- DeepseekV2AttentionMLA ----
+    2  ReplicatedLinear                             14.9 us  nvjet_sm100_tst_64x32_64x16_2x1_2cta_v_bz_splitK_TNT         14.4 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/unquant.py(132): apply
+    3  (self)                                        4.1 us  void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_          3.5 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/unquant.py(132): apply
+    4  RMSNorm                                       3.4 us  kernel_cutlass_kernel_flashinfernormkernelsrmsnormRMSNormKer          3.4 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/layernorm.py(268): forward_cuda
+    5  RMSNorm                                       2.3 us  kernel_cutlass_kernel_flashinfernormkernelsrmsnormRMSNormKer          1.8 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/layernorm.py(268): forward_cuda
+    6  (self)                                        6.6 us  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_TNT          5.5 us
+    7  (self)                                        6.4 us  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_TNT          5.5 us
+    8  Indexer > ReplicatedLinear                    4.5 us  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_splitK_TNT          7.6 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/unquant.py(132): apply
+    9  (self)                                        2.3 us  void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_          3.5 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/unquant.py(132): apply
+   10  Indexer > LayerNorm                           1.8 us  kernel_cutlass_kernel_flashinfernormkernelslayernormLayerNor          1.9 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/layernorm.py(74): layernorm
+   11  Indexer > RotaryEmbedding                     2.3 us  void (anonymous namespace)::fused_rope_kernel<false, 64l, tr          2.5 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/jit_kernel/rope.py(112): apply_rope_inplace
+   12  Indexer                                       2.6 us  void (anonymous namespace)::fast_hadamard_transform_kernel<(          2.0 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/jit_kernel/hadamard.py(33): _hadamard_transform_impl
+   13  Indexer                                       2.1 us  void (anonymous namespace)::fast_hadamard_transform_kernel<(          2.0 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/jit_kernel/hadamard.py(33): _hadamard_transform_impl
+   14  (self)                                        2.5 us  _act_quant_kernel          2.2 us
+   15  Indexer                                       1.8 us  void (anonymous namespace)::fused_store_indexer_cache<__nv_b          2.0 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/jit_kernel/fused_store_index_cache.py(68): fused_store_index_k_cache
+   16  Indexer                                       4.2 us  nvjet_sm100_tss_64x32_64x16_1x2_h_bz_splitK_TNT          4.6 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/attention/dsa/dsa_indexer.py(474): _get_logits_head_gate
+   17  (self)                                        2.9 us  void cublasLt::splitKreduce_kernel<32, 16, int, float, float          3.4 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/attention/dsa/dsa_indexer.py(474): _get_logits_head_gate
+   18  (self)                                        1.6 us  triton_poi_fused_mul_unsqueeze_0          2.0 us
+   19  (self)                                        6.3 us  void deep_gemm::sm100_paged_mqa_logits<false, 1u, 32u, 128u,          6.6 us
+   20  Indexer                                       2.4 us  (anonymous namespace)::topk_transform_decode_kernel((anonymo          2.4 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/attention/dsa/dsa_topk_backend.py(75): topk_transform
+   21  (self)                                        3.8 us  nvjet_sm100_tst_128x32_64x11_2x2_2cta_h_bz_TNT          4.0 us
+   22  RadixAttention                                2.7 us  void flashinfer::RopeQuantizeKernel<true, 16u, 1u, __nv_bflo          4.1 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/attention/utils.py(89): mla_quantize_and_rope_for_fp8
+   23  (self)                                        1.7 us  set_mla_kv_buffer_kernel          1.9 us
+   24  (self)                                       19.2 us  fmhaSm100fKernel_QkvE4m3OBfloat16HQk576HV512PagedKvDenseStat         20.0 us
+   25  (self)                                        3.8 us  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_TNT          5.5 us
+   26  (self)                                       12.5 us  nvjet_sm100_tst_64x64_64x13_4x1_v_bz_TNT         13.5 us
+                                       Subtotal    118.6 us
+
+  ---- prepare_mlp ----
+   27  trtllm_mnnvl_ar.py(265)                     365.5 us  void flashinfer::trtllm_mnnvl_allreduce::twoshotAllreduceKer          6.9 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/flashinfer_comm_fusion.py(720): flashinfer_allreduce_residual_rmsnorm
+   28  (self)                                      359.5 us  void flashinfer::trtllm_mnnvl_allreduce::rmsNormLamport<__nv          7.7 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/flashinfer_comm_fusion.py(720): flashinfer_allreduce_residual_rmsnorm
+   29  (self)                                       21.7 us  nvjet_sm100_tst_64x64_64x13_4x1_v_bz_TNT         13.5 us
+                                       Subtotal    746.8 us
+
+  ---- DeepseekV2MLP ----
+   30  SiluAndMul                                    3.1 us  void (anonymous namespace)::act_and_mul_kernel<__nv_bfloat16          3.3 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/jit_kernel/activation.py(57): _run_activation_inplace
+   31  (self)                                        9.8 us  nvjet_sm100_tst_48x64_64x15_4x1_v_bz_TNN          5.1 us
+                                       Subtotal     13.0 us
+
+                                          TOTAL    1.553 ms  (32 kernels)
+
+  Type B (75 layers): DeepseekV2AttentionMLA + DeepseekV2MoE
+  ------------------------------------------------------------------------------------------
+    #  Detail                                      Duration  Kernel Name  (graph-ON avg)
+  ---  ----------------------------------------  ----------  --------------------------------------------------
+  ---- prepare_attn_and_capture_last_layer_outputs ----
+    0  trtllm_mnnvl_ar.py(265)                     324.0 us  void flashinfer::trtllm_mnnvl_allreduce::twoshotAllreduceKer          6.9 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/flashinfer_comm_fusion.py(720): flashinfer_allreduce_residual_rmsnorm
+    1  (self)                                      322.5 us  void flashinfer::trtllm_mnnvl_allreduce::rmsNormLamport<__nv          7.7 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/flashinfer_comm_fusion.py(720): flashinfer_allreduce_residual_rmsnorm
+                                       Subtotal    646.4 us
+
+  ---- DeepseekV2AttentionMLA ----
+    2  ReplicatedLinear                            244.4 us  nvjet_sm100_tst_64x32_64x16_2x1_2cta_v_bz_splitK_TNT         14.4 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/unquant.py(132): apply
+    3  (self)                                        3.9 us  void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_          3.5 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/unquant.py(132): apply
+    4  RMSNorm                                       3.4 us  kernel_cutlass_kernel_flashinfernormkernelsrmsnormRMSNormKer          3.4 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/layernorm.py(268): forward_cuda
+    5  RMSNorm                                       2.4 us  kernel_cutlass_kernel_flashinfernormkernelsrmsnormRMSNormKer          1.8 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/layernorm.py(268): forward_cuda
+    6  (self)                                        6.6 us  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_TNT          5.5 us
+    7  (self)                                        3.8 us  nvjet_sm100_tst_128x32_64x11_2x2_2cta_h_bz_TNT          4.0 us
+    8  RadixAttention                                2.6 us  void flashinfer::RopeQuantizeKernel<true, 16u, 1u, __nv_bflo          4.1 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/attention/utils.py(89): mla_quantize_and_rope_for_fp8
+    9  (self)                                        1.7 us  set_mla_kv_buffer_kernel          1.9 us
+   10  (self)                                       20.1 us  fmhaSm100fKernel_QkvE4m3OBfloat16HQk576HV512PagedKvDenseStat         20.0 us
+   11  (self)                                        3.9 us  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_TNT          5.5 us
+   12  (self)                                       12.6 us  nvjet_sm100_tst_64x64_64x13_4x1_v_bz_TNT         13.5 us
+                                       Subtotal    305.4 us
+
+  ---- prepare_mlp ----
+   13  trtllm_mnnvl_ar.py(265)                     342.4 us  void flashinfer::trtllm_mnnvl_allreduce::twoshotAllreduceKer          6.9 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/flashinfer_comm_fusion.py(720): flashinfer_allreduce_residual_rmsnorm
+   14  (self)                                      336.2 us  void flashinfer::trtllm_mnnvl_allreduce::rmsNormLamport<__nv          7.7 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/flashinfer_comm_fusion.py(720): flashinfer_allreduce_residual_rmsnorm
+                                       Subtotal    678.6 us
+
+  ---- DeepseekV2MoE ----
+   15  MoEGate                                      10.9 us  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_splitK_TNT          7.6 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/models/deepseek_v2.py(473): forward
+   16  (self)                                        2.9 us  void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_          3.5 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/models/deepseek_v2.py(473): forward
+   17  FusedMoE                                      2.2 us  kernel_cutlass_kernel_flashinferquantizationkernelsnvfp4_qua          2.7 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/fp4_utils.py(31): _flashinfer_fp4_quantize_impl
+   18  FusedMoE                                      3.3 us  void moe::dev::routing::routingCustom::routingIndicesBlockSc          3.7 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py(911): fused_experts_none_to_flashinfer_trtllm_fp4
+   19  FusedMoE                                      5.2 us  void moe::dev::routing::routingCustom::routingIndicesCluster          5.2 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py(911): fused_experts_none_to_flashinfer_trtllm_fp4
+   20  (self)                                       26.9 us  bmm_E2m1_E2m1E2m1_Fp32_Ab16_Bb16_Cb16_t128x16x512_s5_et128x1         94.9 us
+   21  (self)                                       20.7 us  bmm_Bfloat16_E2m1E2m1_Fp32_Ab16_Bb16_t128x16x512_s5_et128x16         51.4 us
+   22  FusedMoE                                      5.8 us  void moe::dev::finalize::finalizeKernelVecLoad<moe::dev::fin          6.9 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py(911): fused_experts_none_to_flashinfer_trtllm_fp4
+   23  DeepseekV2MLP > MergedColumnParallelLinear      5.8 us  nvjet_sm100_tst_64x32_64x16_2x2_2cta_h_bz_splitK_TNT          7.6 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/unquant.py(132): apply
+   24  (self)                                        2.5 us  void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_          3.5 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/unquant.py(132): apply
+   25  DeepseekV2MLP > SiluAndMul                    2.8 us  void (anonymous namespace)::act_and_mul_kernel<__nv_bfloat16          3.3 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/jit_kernel/activation.py(57): _run_activation_inplace
+   26  (self)                                        4.1 us  nvjet_sm100_tst_48x64_64x15_4x1_v_bz_TNN          5.1 us
+   27  mxfp4_flashinfer_trtllm_moe.py(442)           2.0 us  void at::native::vectorized_elementwise_kernel<8, at::native          2.1 us
+                                                             caller: /sgl-workspace/sglang/python/sglang/srt/layers/quantization/mxfp4_flashinfer_trtllm_moe.py(442): maybe_fuse_routed_scale_and_shared_add
+                                       Subtotal     95.1 us
+[INFO] Step 3 written to: Analysis/B200/step3_layer_breakdown.xlsx (60 kernels, 60 matched to graph-ON)
+
+                                          TOTAL    1.725 ms  (28 kernels)
+
+====================================================================================================
+

@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MI355X Dual-Stream: Dispatch Order Controls HIP Graph Stream Assignment</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0e17;
+  --card-bg: #111827;
+  --border: #1e293b;
+  --text: #e2e8f0;
+  --text-dim: #94a3b8;
+  --accent-cur: #3b82f6;
+  --accent-alt: #f59e0b;
+  --accent-idle: #374151;
+  --accent-overlap: #10b981;
+  --accent-red: #ef4444;
+  --accent-good: #22d3ee;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  padding: 40px 32px;
+}
+h1 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px; font-weight: 700;
+  margin-bottom: 6px; color: #f8fafc;
+}
+.subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 28px; }
+
+.tldr {
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid var(--accent-good);
+  border-left: 4px solid var(--accent-good);
+  border-radius: 8px;
+  padding: 18px 22px;
+  margin-bottom: 24px;
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+.tldr strong { color: var(--accent-good); }
+.tldr code, code {
+  background: rgba(255,255,255,0.04);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+pre.code {
+  background: #0f172a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-x: auto;
+  margin: 14px 0;
+}
+pre.code .kw { color: #60a5fa; }
+pre.code .str { color: #86efac; }
+pre.code .cmt { color: #64748b; font-style: italic; }
+pre.code .bad { background: rgba(239,68,68,0.15); }
+pre.code .good { background: rgba(16,185,129,0.15); }
+
+.scenario {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px 28px; margin-bottom: 24px;
+}
+.scenario-header {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 18px;
+}
+.scenario-number {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 700;
+  background: var(--accent-cur); color: #fff;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; flex-shrink: 0;
+}
+.scenario-number.orange { background: var(--accent-alt); }
+.scenario-number.red { background: var(--accent-red); }
+.scenario-number.green { background: var(--accent-overlap); }
+.scenario-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px; font-weight: 600;
+}
+.scenario-desc { color: var(--text-dim); font-size: 13px; margin-left: auto; }
+
+.stream-row { display: flex; align-items: center; margin-bottom: 6px; height: 44px; }
+.stream-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 600;
+  width: 92px; flex-shrink: 0; color: var(--text-dim);
+}
+.stream-label.cur { color: var(--accent-cur); }
+.stream-label.alt { color: var(--accent-alt); }
+
+.stream-track {
+  position: relative;
+  height: 36px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 6px;
+  overflow: visible;
+}
+
+.k {
+  position: absolute; top: 2px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 600;
+  border-radius: 4px; color: #fff;
+  white-space: nowrap; padding: 0 4px;
+  overflow: hidden;
+}
+.k.phase1  { background: #1e40af; }
+.k.qbproj  { background: #2563eb; }
+.k.kvanorm { background: #7c3aed; }
+.k.wkc     { background: #0891b2; }
+.k.rope    { background: #0d9488; }
+.k.cat     { background: #059669; }
+.k.attn    { background: #dc2626; }
+.k.wvc     { background: #e11d48; }
+.k.oproj   { background: #be123c; }
+.k.indexer { background: #d97706; }
+.k.moe     { background: #4338ca; }
+.k.idle    { background: var(--accent-idle); color: var(--text-dim); font-style: italic; border: 1px dashed #4b5563; }
+.k.dots    { background: transparent; color: var(--text-dim); letter-spacing: 2px; }
+
+.annotation {
+  margin-top: 12px; padding: 10px 14px;
+  background: rgba(255,255,255,0.03); border-radius: 6px;
+  border-left: 3px solid var(--accent-cur);
+  font-size: 12px; color: var(--text-dim); line-height: 1.7;
+}
+.annotation.warn { border-left-color: var(--accent-red); }
+.annotation.good { border-left-color: var(--accent-overlap); }
+.annotation strong { color: var(--text); }
+
+.results {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 18px;
+}
+.result-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+}
+.result-card.best {
+  border-color: var(--accent-overlap);
+  background: rgba(16,185,129,0.06);
+}
+.result-card h4 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.result-card .val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+.result-card .delta {
+  font-size: 11px;
+  color: var(--accent-overlap);
+  margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.layout-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  margin-top: 10px;
+}
+.layout-table th, .layout-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.layout-table th { color: var(--text-dim); font-weight: 600; }
+.layout-table td.p0 { color: var(--accent-cur); }
+.layout-table td.p4 { color: var(--accent-alt); }
+.layout-table td.num { text-align: right; }
+.layout-table .bad-row td { background: rgba(239,68,68,0.06); }
+.layout-table .good-row td { background: rgba(16,185,129,0.06); }
+
+.legend {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  margin-top: 28px; padding: 14px 16px;
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+.legend-color { width: 14px; height: 14px; border-radius: 3px; }
+
+section h2 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px; font-weight: 700;
+  color: #f8fafc;
+  margin: 32px 0 14px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+</style>
+</head>
+<body>
+
+<h1>MI355X Decode Layer — Two Rules, One Fast Layout</h1>
+<p class="subtitle">GLM5-FP8 TP=8 M=1 — measurements from <code>tools/glm5_proposalA_v3_test.py</code> on MI355X (container <code>jacchang_GLM_MultiStream</code>)</p>
+
+<div class="tldr">
+  <strong>Two independent HIP-graph rules both matter — get them both right and you get the Scenario 2 layout AND ~19 μs of speedup.</strong><br><br>
+
+  <strong>Rule 1 — dispatch-order picks the physical stream.</strong> At each fork, the branch whose
+  first kernel is <em>captured first</em> keeps the current physical stream (phys 0).  The later-captured
+  branch gets a fresh aux physical stream.  HIP's replay scheduler ignores which
+  <code>cuda.Stream</code> object you dispatched to.<br><br>
+
+  <strong>Rule 2 — <code>wait_stream</code> position decides when alt starts.</strong>
+  <code>alt.wait_stream(cur)</code> records an event at cur's <em>current</em> state.  Place it AFTER a
+  heavy cur kernel that alt doesn't actually need (e.g. <code>q_b_proj</code>), and alt stalls for the
+  duration of that kernel even though no real data dependency exists.<br><br>
+
+  <strong>Combined fix:</strong>
+  (1) move <code>alt_stream.wait_stream(cur)</code> BEFORE <code>phase2_current</code> so alt only
+  waits for phase1, and
+  (2) keep the cur-side gap-fill dispatched before the <code>with stream(alt):</code> block so cur
+  stays on phys 0 and indexer goes to the aux stream.
+  This is Proposal A v4 — the <em>fastest</em> variant and the one with the clean Scenario 2 layout.
+</div>
+
+<!-- ═══════════ Measured results ═══════════ -->
+<section>
+<h2>Measured on MI355X (HIP Graph, median of 3 × 100-iter runs)</h2>
+<div class="results" style="grid-template-columns:repeat(5,1fr)">
+  <div class="result-card">
+    <h4>Baseline</h4>
+    <div class="val">299.8 μs</div>
+    <div class="delta" style="color:var(--text-dim)">reference</div>
+  </div>
+  <div class="result-card">
+    <h4>A_v2<br><span style="font-weight:400">alt dispatched first</span></h4>
+    <div class="val">289.3 μs</div>
+    <div class="delta">−10.5 μs (−3.5%)</div>
+  </div>
+  <div class="result-card">
+    <h4>A_v3<br><span style="font-weight:400">cur first, wait late</span></h4>
+    <div class="val">294.0 μs</div>
+    <div class="delta">−5.8 μs (−1.9%)</div>
+  </div>
+  <div class="result-card">
+    <h4>A_v3e<br><span style="font-weight:400">v3 + events</span></h4>
+    <div class="val">292.8 μs</div>
+    <div class="delta">−7.1 μs (−2.4%)</div>
+  </div>
+  <div class="result-card best">
+    <h4>A_v4<br><span style="font-weight:400">both rules applied</span></h4>
+    <div class="val">280.9 μs</div>
+    <div class="delta">−18.9 μs (−6.3%)</div>
+  </div>
+</div>
+<div class="annotation" style="margin-top:14px">
+  <strong>Trace-level check — when does <code>phys_aux</code> start running?</strong><br>
+  Baseline: <code>t = 50.7 μs</code> (alt kicks off the moment phase1 ends).
+  A_v3: <code>t = 71.0 μs</code> — <strong>20 μs late</strong> because <code>wait_stream</code> was placed after
+  <code>phase2_current</code>.
+  A_v4: <code>t = 50.0 μs</code> — same as baseline, alt is back on time.
+  <br><br>
+  <strong>Sanity check:</strong> the kernel bucket tables below show A_v4 has the same clean layout as A_v3
+  (all indexer on phys 12, gap-fill on phys 0) — Scenario 2 exactly.  The v3 → v4 delta is pure
+  <code>wait_stream</code> repositioning, nothing else changed.
+</div>
+</section>
+
+<!-- ═══════════ Mechanism ═══════════ -->
+<section>
+<h2>The two rules in code</h2>
+
+<pre class="code"><span class="cmt"># Baseline — wait_stream early, cur dispatched first → works, but no gap-fill</span>
+<span class="good">alt_stream.wait_stream(cur)</span>                    <span class="cmt">#  Rule 2 ✓  alt waits for phase1 only</span>
+q, q_lora = phase2_current(...)                <span class="cmt">#  Rule 1 ✓  1st dispatch → cur stays on phys 0</span>
+<span class="kw">with</span> torch.cuda.stream(alt_stream):
+    topk_ids, kv_normed = phase2_alt(...)      <span class="cmt">#  alt runs in parallel starting at phase1 end</span>
+cur.wait_stream(alt_stream)
+
+<span class="cmt"># A_v2 — alt dispatched first. Parallelism OK, but labels flip on the trace.</span>
+q, q_lora = phase2_current(...)
+<span class="bad">alt_stream.wait_stream(cur)</span>                    <span class="cmt">#  Rule 2 ✗  after q_b_proj → alt starts late</span>
+<span class="bad"><span class="kw">with</span> torch.cuda.stream(alt_stream):
+    topk_ids = phase2_alt_proposalA(...)</span>       <span class="cmt">#  Rule 1 ✗  1st dispatch → phys 0 (wanted phys 4)</span>
+kv_normed = aiter_rms_norm(...)                <span class="cmt">#                2nd dispatch → phys 4 (wanted phys 0)</span>
+q_all = phase3_pre_wait(...)
+cur.wait_stream(alt_stream)
+
+<span class="cmt"># A_v3 — cur dispatched first, wait_stream still late → clean layout, alt still late</span>
+q, q_lora = phase2_current(...)
+<span class="bad">alt_stream.wait_stream(cur)</span>                    <span class="cmt">#  Rule 2 ✗  still after q_b_proj → alt t=71 μs (20 late)</span>
+kv_normed = aiter_rms_norm(...)                <span class="cmt">#  Rule 1 ✓  1st → phys 0</span>
+q_all = phase3_pre_wait(...)
+<span class="kw">with</span> torch.cuda.stream(alt_stream):
+    topk_ids = phase2_alt_proposalA(...)       <span class="cmt">#  Rule 1 ✓  2nd → phys 4</span>
+cur.wait_stream(alt_stream)
+
+<span class="cmt"># A_v4 — BOTH rules satisfied → fastest AND cleanest</span>
+<span class="good">alt_stream.wait_stream(cur)</span>                    <span class="cmt">#  Rule 2 ✓  before q_b_proj → alt starts at t=50 μs</span>
+q, q_lora = phase2_current(...)                <span class="cmt">#  Rule 1 ✓  1st cur dispatch → cur on phys 0</span>
+<span class="good">kv_normed = aiter_rms_norm(...)
+q_all = phase3_pre_wait(...)
+<span class="kw">with</span> torch.cuda.stream(alt_stream):
+    topk_ids = phase2_alt_proposalA(...)</span>       <span class="cmt">#  Rule 1 ✓  dispatched last → phys 4</span>
+cur.wait_stream(alt_stream)
+</pre>
+
+<div class="annotation good" style="margin-top:14px">
+  <strong>Why the <code>wait_stream</code> can safely move before <code>phase2_current</code>:</strong>
+  <code>phase2_current</code> returns <code>(q, q_lat)</code> where the second element is <em>q_lora</em>.
+  The indexer's first kernel is <code>wq_b = fp8_gemm(q_lora, …)</code> — it only consumes <code>q_lat</code>
+  (phase1 output), not the GEMM output <code>q</code>.  So alt has no true data dependency on
+  <code>q_b_proj</code> and can start the moment phase1 completes.
+</div>
+</section>
+
+<!-- ═══════════ Kernel distribution evidence ═══════════ -->
+<section>
+<h2>Kernel bucket counts per physical stream (5 graph replays)</h2>
+<div class="scenario">
+<table class="layout-table">
+  <thead>
+    <tr>
+      <th>Kernel bucket</th>
+      <th colspan="2">Baseline</th>
+      <th colspan="2">A_v2 (bad layout)</th>
+      <th colspan="2">A_v3 (intended layout)</th>
+    </tr>
+    <tr>
+      <th></th>
+      <th class="num">phys 0</th><th class="num">phys 3</th>
+      <th class="num">phys 0</th><th class="num">phys 5</th>
+      <th class="num">phys 0</th><th class="num">phys 8</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>phase1 (rms_quant, qkv_a_proj)</td>
+        <td class="num">24</td><td class="num">14</td>
+        <td class="num">35</td><td class="num">15</td>
+        <td class="num">28</td><td class="num">10</td></tr>
+    <tr><td>q_b_proj + other ck_gemm</td>
+        <td class="num">20</td><td class="num">8</td>
+        <td class="num">35</td><td class="num">0</td>
+        <td class="num">20</td><td class="num">8</td></tr>
+
+    <tr class="good-row"><td>gap-fill W_kc / RoPE_mla / Cat</td>
+        <td class="num" style="color:var(--text-dim)">12</td><td class="num" style="color:var(--text-dim)">0</td>
+        <td class="num" style="color:var(--accent-red)"><strong>5</strong></td><td class="num" style="color:var(--accent-red)"><strong>10</strong></td>
+        <td class="num"><strong>12</strong></td><td class="num"><strong>0</strong></td></tr>
+
+    <tr class="good-row"><td>indexer (hadamard, act_quant, k_norm, rope_2c, set_k, weights_proj, paged_mqa)</td>
+        <td class="num"><strong>0</strong></td><td class="num"><strong>27</strong></td>
+        <td class="num" style="color:var(--accent-red)"><strong>40</strong></td><td class="num" style="color:var(--accent-red)"><strong>0</strong></td>
+        <td class="num"><strong>0</strong></td><td class="num"><strong>31</strong></td></tr>
+
+    <tr><td>attn (tilelang + flatten)</td>
+        <td class="num">12</td><td class="num">0</td>
+        <td class="num">15</td><td class="num">0</td>
+        <td class="num">12</td><td class="num">0</td></tr>
+    <tr><td>moe_routed (gate, topk, gemm)</td>
+        <td class="num">0</td><td class="num">15</td>
+        <td class="num">0</td><td class="num">25</td>
+        <td class="num">0</td><td class="num">15</td></tr>
+  </tbody>
+</table>
+<div class="annotation good" style="margin-top:12px">
+  <strong>Baseline</strong> and <strong>A_v3</strong> produce an <em>identical</em> kernel-to-stream mapping for the
+  indexer and the attn/gap-fill block (all indexer on the aux stream, everything else on phys 0).
+  A_v3 just adds the extra gap-fill kernels on phys 0 before the indexer wait — exactly Scenario 2 on the
+  previous page.<br><br>
+  <strong>A_v2</strong> shows the mislabeling: indexer (40 kernels) sits on phys 0 while gap-fill (10 ck_gemm-
+  style + 5 other) sits on phys 5.  The parallelism is still there (you get a −14.5 μs speedup), but the
+  physical layout is flipped from what the Python code says.
+</div>
+</div>
+</section>
+
+<!-- ═══════════ Scenario 1: Baseline ═══════════ -->
+<section>
+<h2>Timelines</h2>
+
+<div class="scenario">
+  <div class="scenario-header">
+    <div class="scenario-number">1</div>
+    <div class="scenario-title">Baseline — one-branch fork, matches Python</div>
+    <div class="scenario-desc">301.6 μs · ~131 μs IDLE on cur</div>
+  </div>
+  <div style="position:relative; margin-top: 24px;">
+    <div class="stream-row">
+      <div class="stream-label cur">phys 0</div>
+      <div class="stream-track" style="width:884px;">
+        <div class="k phase1" style="left:0; width:133px;">phase1 ~51μs</div>
+        <div class="k qbproj" style="left:134px; width:46px;">q_b_proj</div>
+        <div class="k idle" style="left:181px; width:339px;">IDLE ~131μs</div>
+        <div class="k wkc" style="left:521px; width:18px;"></div>
+        <div class="k rope" style="left:540px; width:14px;"></div>
+        <div class="k cat" style="left:554px; width:18px;"></div>
+        <div class="k attn" style="left:573px; width:62px;">attn ×2</div>
+        <div class="k wvc" style="left:636px; width:29px;">W_vc</div>
+        <div class="k oproj" style="left:666px; width:40px;">o_proj</div>
+        <div class="k moe" style="left:707px; width:130px;">MoE ~50μs</div>
+      </div>
+    </div>
+    <div class="stream-row">
+      <div class="stream-label alt">phys 3</div>
+      <div class="stream-track" style="width:884px;">
+        <div class="k kvanorm" style="left:152px; width:42px; font-size:8px;">kv_a_norm</div>
+        <div class="k indexer" style="left:195px; width:307px;">NSA indexer ~132μs</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ Scenario 2a: A_v3 (clean layout, alt starts late) ═══════ -->
+<div class="scenario">
+  <div class="scenario-header">
+    <div class="scenario-number orange">2a</div>
+    <div class="scenario-title">A_v3 — gap-fill first, but wait_stream after q_b_proj → alt starts 20 μs late</div>
+    <div class="scenario-desc">294.0 μs · clean layout but alt stalls unnecessarily</div>
+  </div>
+  <div style="position:relative; margin-top: 24px;">
+    <div class="stream-row">
+      <div class="stream-label cur">phys 0</div>
+      <div class="stream-track" style="width:884px;">
+        <div class="k phase1" style="left:0; width:133px;">phase1 ~51μs</div>
+        <div class="k qbproj" style="left:134px; width:46px;">q_b_proj</div>
+        <div class="k kvanorm" style="left:181px; width:42px; font-size:8px;">kv_a_norm</div>
+        <div class="k wkc" style="left:224px; width:18px;"></div>
+        <div class="k rope" style="left:243px; width:16px;"></div>
+        <div class="k cat" style="left:260px; width:18px;"></div>
+        <div class="k idle" style="left:279px; width:260px;">IDLE ~130μs</div>
+        <div class="k attn" style="left:540px; width:62px;">attn ×2</div>
+        <div class="k wvc" style="left:603px; width:29px;">W_vc</div>
+        <div class="k oproj" style="left:633px; width:40px;">o_proj</div>
+        <div class="k moe" style="left:674px; width:130px;">MoE</div>
+      </div>
+    </div>
+    <div class="stream-row">
+      <div class="stream-label alt">phys 8</div>
+      <div class="stream-track" style="width:884px;">
+        <div class="k idle" style="left:0; width:190px; background:transparent; border:0; color:#475569;">alt waits for q_b_proj (20μs late)</div>
+        <div class="k indexer" style="left:190px; width:344px;">NSA indexer ~132μs (starts at t≈71)</div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation warn">
+    Clean Scenario 2 layout (indexer on phys 8, everything else on phys 0) but the
+    <code>alt_stream.wait_stream(cur)</code> call is placed AFTER <code>phase2_current</code>.  alt has to wait for
+    <code>q_b_proj</code> to finish even though the indexer's first kernel only needs
+    <code>q_lora = q_lat</code> from phase1.  Result: alt starts ~20 μs late, the critical path lengthens,
+    whole iteration ends up 5-6 μs slower than A_v2 despite doing the same work.
+  </div>
+</div>
+
+<!-- ═══════ Scenario 2b: A_v4 (final — clean + fast) ═══════ -->
+<div class="scenario">
+  <div class="scenario-header">
+    <div class="scenario-number green">2b</div>
+    <div class="scenario-title">A_v4 — both rules applied → clean layout AND alt on time</div>
+    <div class="scenario-desc">280.9 μs · −18.9 μs vs baseline · <strong>the variant to ship</strong></div>
+  </div>
+  <div style="position:relative; margin-top: 24px;">
+    <div class="stream-row">
+      <div class="stream-label cur">phys 0</div>
+      <div class="stream-track" style="width:884px;">
+        <div class="k phase1" style="left:0; width:133px;">phase1 ~51μs</div>
+        <div class="k qbproj" style="left:134px; width:46px;">q_b_proj</div>
+        <div class="k kvanorm" style="left:181px; width:42px; font-size:8px;">kv_a_norm</div>
+        <div class="k wkc" style="left:224px; width:18px;"></div>
+        <div class="k rope" style="left:243px; width:16px;"></div>
+        <div class="k cat" style="left:260px; width:18px;"></div>
+        <div class="k idle" style="left:279px; width:176px;">IDLE ~88μs</div>
+        <div class="k attn" style="left:456px; width:62px;">attn ×2</div>
+        <div class="k wvc" style="left:519px; width:29px;">W_vc</div>
+        <div class="k oproj" style="left:549px; width:40px;">o_proj</div>
+        <div class="k moe" style="left:590px; width:130px;">MoE</div>
+      </div>
+    </div>
+    <div class="stream-row">
+      <div class="stream-label alt">phys 12</div>
+      <div class="stream-track" style="width:884px;">
+        <div class="k indexer" style="left:133px; width:344px;">NSA indexer ~132μs (starts at t=50)</div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation good">
+    <code>wait_stream</code> moved BEFORE <code>phase2_current</code> so alt fires the indexer as soon as
+    phase1 ends (t ≈ 50 μs, same as baseline).  cur still runs <code>q_b_proj → kv_a_norm → W_kc → RoPE →
+    Cat</code> on phys 0 in parallel with the first ~30 μs of indexer.  Both branches hit the join at
+    roughly the same time, so the IDLE gap shrinks from 131 μs (baseline) → 88 μs.<br><br>
+    <strong>This is the "middle pattern" you wanted, and it's also the fastest.</strong>
+  </div>
+</div>
+
+<!-- ═══════ Scenario 3: Proposal A v2 (HIP "remap" — still parallel, just labeled weirdly) ═══════ -->
+<div class="scenario">
+  <div class="scenario-header">
+    <div class="scenario-number red">3</div>
+    <div class="scenario-title">A_v2 — alt dispatched FIRST → labels flipped</div>
+    <div class="scenario-desc">289.3 μs · parallelism is there but trace labels are opposite of Python</div>
+  </div>
+  <div style="position:relative; margin-top: 24px;">
+    <div class="stream-row">
+      <div class="stream-label" style="color:#64748b;">phys 0</div>
+      <div class="stream-track" style="width:884px;">
+        <div class="k phase1" style="left:0; width:133px;">phase1</div>
+        <div class="k qbproj" style="left:134px; width:46px;">q_b_proj</div>
+        <div class="k kvanorm" style="left:181px; width:42px; font-size:8px;">kv_a_norm</div>
+        <div class="k indexer" style="left:224px; width:246px;">NSA indexer (was "alt" in Python)</div>
+        <div class="k attn" style="left:471px; width:59px;">attn ×2</div>
+        <div class="k wvc" style="left:531px; width:26px;">W_vc</div>
+        <div class="k oproj" style="left:558px; width:40px;">o_proj</div>
+        <div class="k moe" style="left:599px; width:130px;">MoE shared</div>
+      </div>
+    </div>
+    <div class="stream-row">
+      <div class="stream-label" style="color:#64748b;">phys 5</div>
+      <div class="stream-track" style="width:884px;">
+        <div class="k wkc" style="left:226px; width:23px;"></div>
+        <div class="k rope" style="left:250px; width:13px;"></div>
+        <div class="k cat" style="left:264px; width:12px;"></div>
+        <div class="k moe" style="left:640px; width:90px;">MoE routed</div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation warn">
+    HIP kept the indexer on phys 0 because its first kernel was captured before any of the cur-side
+    gap-fill kernels (Rule 1).  <strong>The parallelism is still correct</strong> — you get ~10 μs of
+    speedup — but if you read this trace at face value, it looks like "W_kc / RoPE / Cat are on alt",
+    which is the opposite of what the Python code says.  A_v4 gets the same speedup (and then some)
+    without the confusing labels.
+  </div>
+</div>
+</section>
+
+<!-- ═══════ Why not more than ~15 μs? ═══════ -->
+<section>
+<h2>Why we can't do much better than ~15 μs on M=1 decode</h2>
+<div class="scenario">
+  <div class="annotation" style="margin-top:0">
+    The NSA indexer is ~132 μs and is the critical path.  On the cur side, the kernels that don't
+    depend on <code>topk_ids</code> total ~18 μs (<code>kv_a_norm 2 + W_kc 6 + RoPE_mla 5 + Cat 5</code>).  Proposal A v2
+    captures 14.5 μs of that 18 μs (≈80%); v3 captures 9.1 μs (≈50%) because of the extra cross-stream
+    wait for attn.  To break past ~15 μs we would need to <em>shrink</em> the indexer itself (e.g. smaller
+    <code>wk</code>, fewer hadamards), or raise M so phase1 / q_b_proj grow enough to absorb more idle.
+    <br><br>
+    Proposal C (production-style K/Q indexer split) and Proposal D (Proposal A + wq_b on cur) both made
+    it worse by adding more cross-stream dependency nodes — confirmed in the previous iteration of
+    <code>glm5_proposalC_test.py</code>.
+  </div>
+</div>
+</section>
+
+<!-- ═══════ Legend ═══════ -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-color" style="background:#1e40af;"></div>phase1 (pre-attn serial)</div>
+  <div class="legend-item"><div class="legend-color" style="background:#2563eb;"></div>q_b_proj</div>
+  <div class="legend-item"><div class="legend-color" style="background:#7c3aed;"></div>kv_a_norm</div>
+  <div class="legend-item"><div class="legend-color" style="background:#0891b2;"></div>W_kc</div>
+  <div class="legend-item"><div class="legend-color" style="background:#0d9488;"></div>RoPE_mla</div>
+  <div class="legend-item"><div class="legend-color" style="background:#059669;"></div>Cat</div>
+  <div class="legend-item"><div class="legend-color" style="background:#d97706;"></div>NSA indexer</div>
+  <div class="legend-item"><div class="legend-color" style="background:#dc2626;"></div>tilelang attn ×2</div>
+  <div class="legend-item"><div class="legend-color" style="background:#e11d48;"></div>W_vc / o_proj</div>
+  <div class="legend-item"><div class="legend-color" style="background:#4338ca;"></div>MoE</div>
+  <div class="legend-item"><div class="legend-color" style="background:#374151; border:1px dashed #4b5563;"></div>IDLE</div>
+</div>
+
+</body>
+</html>

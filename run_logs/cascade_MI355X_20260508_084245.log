@@ -1,0 +1,3471 @@
++ ulimit -n 65535
++ sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'
++ MODEL_PRESET=deepseek-r1-0528
++ MODEL_PATH=
++ CACHE_MODE=hicache
++ BENCH_MODE=multiturn
++ SWEEP_MODES=false
++ TP_SIZE=8
++ PORT=30000
++ HOST=localhost
++ USER_TAG=
++ DOCKER=untagged-docker
++ DATASET_PATH=
++ USE_NUMA_INTERLEAVE=true
++ HICACHE_SIZE=auto
++ HOST_HEADROOM_GB_DEFAULT=200
++ HICACHE_SIZE_SWEEP='192 256 320'
++ NUM_CLIENTS=80
++ NUM_ROUNDS=10
++ REQUEST_LENGTH=2048
++ OUTPUT_LENGTH=1
++ MAX_PARALLEL=4
++ REQUEST_RATE=16
++ DISABLE_AUTO_RUN=true
++ ENABLE_ROUND_BARRIER=true
++ RAND_ISL_LIST='32768 65536'
++ RAND_OSL=2048
++ RAND_NUM_PROMPTS=4
++ RAND_CONCURRENCY=1
++ RAND_WARMUP=2
++ [[ 22 -gt 0 ]]
++ case $1 in
++ CACHE_MODE=hicache_file
++ shift 2
++ [[ 20 -gt 0 ]]
++ case $1 in
++ USER_TAG=-MI355X_cascade
++ shift 2
++ [[ 18 -gt 0 ]]
++ case $1 in
++ DOCKER=rocm/sgl-dev:v0.5.11-rocm720-mi35x-20260507
++ shift 2
++ [[ 16 -gt 0 ]]
++ case $1 in
++ NUM_CLIENTS=300
++ shift 2
++ [[ 14 -gt 0 ]]
++ case $1 in
++ NUM_ROUNDS=10
++ shift 2
++ [[ 12 -gt 0 ]]
++ case $1 in
++ REQUEST_LENGTH=4096
++ shift 2
++ [[ 10 -gt 0 ]]
++ case $1 in
++ OUTPUT_LENGTH=1
++ shift 2
++ [[ 8 -gt 0 ]]
++ case $1 in
++ MAX_PARALLEL=8
++ shift 2
++ [[ 6 -gt 0 ]]
++ case $1 in
++ REQUEST_RATE=32
++ shift 2
++ [[ 4 -gt 0 ]]
++ case $1 in
++ HICACHE_SIZE=192
++ shift 2
++ [[ 2 -gt 0 ]]
++ case $1 in
++ HICACHE_SIZE_SWEEP=
++ shift 2
++ [[ 0 -gt 0 ]]
++ case "$MODEL_PRESET" in
++ '[' -z '' ']'
++ MODEL_PATH=/data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528
++ REASONING_PARSER=deepseek-r1
++ TOOL_CALL_PARSER=
++ MODEL_FAMILY=deepseek
+++ basename /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528
++ MODEL_NAME=DeepSeek-R1-0528
++ [[ /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 == /* ]]
++ '[' '!' -d /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 ']'
+++ awk '/^MemAvailable:/ {print int($2/1024/1024)}' /proc/meminfo
++ MEM_AVAIL_GB=2953
++ HOST_HEADROOM_GB=200
++ USABLE_HOST_GB=2753
+++ get_gpu_hbm_gb
+++ command -v rocm-smi
+++ rocm-smi --showmeminfo vram
+++ awk '/VRAM Total Memory/ {print int($NF/1024/1024/1024); exit}'
++ HBM_GB=287
++ case "$MODEL_FAMILY" in
++ PER_RANK_WEIGHT_GB=83
++ DEVICE_POOL_GB=160
++ '[' 160 -lt 0 ']'
++ echo '>>> est. per-rank GPU KV pool: 160 GB' '(HBM=287 GB × 0.85 − 83 GB weights, model=deepseek)'
+>>> est. per-rank GPU KV pool: 160 GB (HBM=287 GB × 0.85 − 83 GB weights, model=deepseek)
++ '[' -n '' ']'
++ '[' 192 = auto ']'
++ echo '>>> manual --hicache-size: 192 GB per rank' '(total host pool ≈ 1536 GB)'
+>>> manual --hicache-size: 192 GB per rank (total host pool ≈ 1536 GB)
+++ echo rocm/sgl-dev:v0.5.11-rocm720-mi35x-20260507
+++ sed 's/\//_/g; s/:/-/g'
++ DOCKER_FILENAME=rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507
++ BASE_LOG_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade
++ mkdir -p /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade
+++ detect_numa_nodes
+++ sed 's|.*/node||'
+++ ls -d /sys/devices/system/node/node0 /sys/devices/system/node/node1
+++ sort -n
+++ paste -sd,
++ NUMA_NODES=0,1
++ NUMACTL_PREFIX=()
++ '[' true = true ']'
++ command -v numactl
++ '[' -z 0,1 ']'
++ [[ 0,1 != *,* ]]
++ NUMACTL_PREFIX=(numactl --interleave="$NUMA_NODES")
++ echo '>>> NUMA interleave: --interleave=0,1 (0 + 1 nodes)'
+>>> NUMA interleave: --interleave=0,1 (0 + 1 nodes)
++ '[' false = true ']'
++ CACHE_MODES=("$CACHE_MODE")
++ '[' -n '' ']'
++ SIZE_LIST=("$HICACHE_SIZE")
++ SKIPPED_LOG=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/skipped.log
++ touch /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/skipped.log
++ for cm in "${CACHE_MODES[@]}"
++ [[ hicache_file == hicache* ]]
++ sizes_to_run=("${SIZE_LIST[@]}")
++ for sz in "${sizes_to_run[@]}"
++ '[' 192 '!=' _unused_ ']'
++ total_pool_gb=1536
++ '[' 1536 -gt 2753 ']'
++ '[' 160 -gt 0 ']'
++ '[' 192 -le 160 ']'
++ HICACHE_SIZE=192
++ LOG_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192
++ banner_size='  hicache_size=192 GB'
++ '[' multiturn = multiturn ']'
++ '[' -s /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/bench_multiturn.jsonl ']'
++ echo ================================================================
+================================================================
++ echo '>>> [HiCache.sh] cache_mode=hicache_file  hicache_size=192 GB  bench=multiturn  model=DeepSeek-R1-0528'
+>>> [HiCache.sh] cache_mode=hicache_file  hicache_size=192 GB  bench=multiturn  model=DeepSeek-R1-0528
++ echo ================================================================
+================================================================
++ run_one hicache_file
++ local cache_mode=hicache_file
++ mkdir -p /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192
++ '[' multiturn = multiturn ']'
++ export SGLANG_TORCH_PROFILER_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192
++ SGLANG_TORCH_PROFILER_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192
++ snapshot_host_info /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/host_info.log
++ local logfile=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/host_info.log
++ set +e +o pipefail
++ trap 'set -e -o pipefail' RETURN
++ tee /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/host_info.log
+++ date '+%F %T %Z'
++ echo '=== HiCache.sh host snapshot @ 2026-05-08 08:42:46 UTC ==='
++ echo
++ echo '--- lscpu ---'
+=== HiCache.sh host snapshot @ 2026-05-08 08:42:46 UTC ===
+
+--- lscpu ---
++ lscpu
++ grep -E 'Architecture|Vendor|Model name|CPU\(s\)|Socket|Core|Thread|NUMA'
+Architecture:                            x86_64
+CPU(s):                                  256
+On-line CPU(s) list:                     0-255
+Vendor ID:                               AuthenticAMD
+BIOS Vendor ID:                          Advanced Micro Devices, Inc.
+Model name:                              AMD EPYC 9575F 64-Core Processor
+BIOS Model name:                         AMD EPYC 9575F 64-Core Processor               
+Thread(s) per core:                      2
+Core(s) per socket:                      64
+Socket(s):                               2
+NUMA node(s):                            2
+NUMA node0 CPU(s):                       0-63,128-191
+NUMA node1 CPU(s):                       64-127,192-255
++ echo
++ echo '--- /proc/meminfo (selected) ---'
+
+--- /proc/meminfo (selected) ---
++ grep -E '^MemTotal:|^MemAvailable:|^MemFree:|^Cached:|^Buffers:|^Dirty:|^HugePages_Total' /proc/meminfo
+MemTotal:       3170254604 kB
+MemFree:        2435974676 kB
+MemAvailable:   3096881420 kB
+Buffers:          535224 kB
+Cached:         666049324 kB
+Dirty:                28 kB
+HugePages_Total:       0
++ echo
++ echo '--- NUMA per-node DRAM + CPU list ---'
+
+--- NUMA per-node DRAM + CPU list ---
++ for n in /sys/devices/system/node/node[0-9]*
++ '[' -d /sys/devices/system/node/node0 ']'
++ local nid mem cpus
+++ basename /sys/devices/system/node/node0
+++ sed s/node//
++ nid=0
+++ awk '/MemTotal/{print int($4/1024/1024)" GB"}' /sys/devices/system/node/node0/meminfo
++ mem='1511 GB'
+++ cat /sys/devices/system/node/node0/cpulist
++ cpus=0-63,128-191
++ printf '  node %s: DRAM=%s, CPUs=%s\n' 0 '1511 GB' 0-63,128-191
++ for n in /sys/devices/system/node/node[0-9]*
++ '[' -d /sys/devices/system/node/node1 ']'
+  node 0: DRAM=1511 GB, CPUs=0-63,128-191
++ local nid mem cpus
+++ basename /sys/devices/system/node/node1
+++ sed s/node//
++ nid=1
+++ awk '/MemTotal/{print int($4/1024/1024)" GB"}' /sys/devices/system/node/node1/meminfo
++ mem='1511 GB'
+++ cat /sys/devices/system/node/node1/cpulist
++ cpus=64-127,192-255
++ printf '  node %s: DRAM=%s, CPUs=%s\n' 1 '1511 GB' 64-127,192-255
++ echo
++ echo '--- GPU → NUMA node (via PCIe sysfs, vendor-agnostic) ---'
+  node 1: DRAM=1511 GB, CPUs=64-127,192-255
+
+--- GPU → NUMA node (via PCIe sysfs, vendor-agnostic) ---
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:14.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:14.0/class
++ c=0x0c0500
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:14.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:14.3/class
++ c=0x060100
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.1/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.2/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.3/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.4/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.4/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.5/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.5/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.6/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.6/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:18.7/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:18.7/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.1/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.2/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.3/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.4/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.4/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.5/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.5/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.6/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.6/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:00:19.7/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:00:19.7/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:01:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:01:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:02:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:02:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:02:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:02:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:02:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:02:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:02:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:02:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:03:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:03:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:04:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:04:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:05:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:05:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:06:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:06:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:07:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:07:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:08:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:08:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:09:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:09:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0a:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:0a:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:0a:00.0
++ bdf=0000:0a:00.0
+++ cat /sys/bus/pci/devices/0000:0a:00.0/numa_node
++ n=0
++ printf '  %s  %-9s  NUMA %s\n' 0000:0a:00.0 AMD-CDNA 0
++ for d in /sys/bus/pci/devices/*
+  0000:0a:00.0  AMD-CDNA   NUMA 0
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0c:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0c:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0c:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0c:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:0c:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:0c:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:10:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:10:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:11:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:11:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:12:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:12:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:14:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:14:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:19:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:19:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1a:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1b:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1b:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1b:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1b:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1b:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1b:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1d:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1d:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1e:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:1e:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:1f:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:1f:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:20:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:20:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:21:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:21:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:22:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:22:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:23:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:23:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:23:00.0
++ bdf=0000:23:00.0
+++ cat /sys/bus/pci/devices/0000:23:00.0/numa_node
++ n=0
++ printf '  %s  %-9s  NUMA %s\n' 0000:23:00.0 AMD-CDNA 0
++ for d in /sys/bus/pci/devices/*
+  0000:23:00.0  AMD-CDNA   NUMA 0
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:24:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:24:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:25:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:25:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:25:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:25:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:25:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:25:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:25:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:25:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:29:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:29:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:2a:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:2a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:2b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:2b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:31:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:31:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:32:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:32:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:32:00.4/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:32:00.4/class
++ c=0x0c0330
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:01.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:01.2/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:37:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:37:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:38:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:38:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:38:00.1/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:38:00.1/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:39:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:39:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3a:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3a:01.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3a:01.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3a:02.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3a:02.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3b:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3b:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3c:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3c:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:3d:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:3d:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:42:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:42:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:42:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:42:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:42:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:42:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:03.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:03.3/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:47:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:47:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:48:00.0/vendor
++ v=0x1a03
+++ cat /sys/bus/pci/devices/0000:48:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:49:00.0/vendor
++ v=0x1a03
+++ cat /sys/bus/pci/devices/0000:49:00.0/class
++ c=0x030000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:4a:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:4a:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:4a:00.5/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:4a:00.5/class
++ c=0x108000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:50:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:50:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:51:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:51:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:52:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:52:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:52:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:52:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:52:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:52:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:52:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:52:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:53:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:53:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:54:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:54:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:55:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:55:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:56:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:56:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:57:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:57:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:58:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:58:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:59:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:59:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5a:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:5a:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:5a:00.0
++ bdf=0000:5a:00.0
+++ cat /sys/bus/pci/devices/0000:5a:00.0/numa_node
++ n=0
++ printf '  %s  %-9s  NUMA %s\n' 0000:5a:00.0 AMD-CDNA 0
++ for d in /sys/bus/pci/devices/*
+  0000:5a:00.0  AMD-CDNA   NUMA 0
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5c:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5c:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5c:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5c:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:5c:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:5c:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:60:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:60:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:61:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:61:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:62:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:62:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:68:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:68:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:69:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:69:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6a:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6a:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6a:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6a:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6a:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6a:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6a:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6c:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6c:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6d:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:6d:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6e:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6e:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:6f:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:6f:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:70:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:70:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:71:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:71:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:72:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:72:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:72:00.0
++ bdf=0000:72:00.0
+++ cat /sys/bus/pci/devices/0000:72:00.0/numa_node
++ n=0
++ printf '  %s  %-9s  NUMA %s\n' 0000:72:00.0 AMD-CDNA 0
++ for d in /sys/bus/pci/devices/*
+  0000:72:00.0  AMD-CDNA   NUMA 0
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:73:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:73:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:74:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:74:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:74:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:74:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:74:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:74:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:74:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:74:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:78:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:78:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:79:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:79:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:7a:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:7a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:7c:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:7c:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:7c:00.4/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:7c:00.4/class
++ c=0x0c0330
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:81:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:81:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:82:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:82:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:83:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:83:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:83:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:83:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:83:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:83:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:83:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:83:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:84:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:84:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:85:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:85:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:86:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:86:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:87:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:87:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:88:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:88:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:89:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:89:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8a:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:8a:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8b:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:8b:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:8b:00.0
++ bdf=0000:8b:00.0
+++ cat /sys/bus/pci/devices/0000:8b:00.0/numa_node
++ n=1
++ printf '  %s  %-9s  NUMA %s\n' 0000:8b:00.0 AMD-CDNA 1
++ for d in /sys/bus/pci/devices/*
+  0000:8b:00.0  AMD-CDNA   NUMA 1
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8d:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8d:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8d:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8d:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8d:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8d:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:8d:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:8d:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:91:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:91:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:92:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:92:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:93:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:93:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:95:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:95:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9a:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:9a:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9b:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9b:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9c:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9c:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9c:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9c:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9c:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9c:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9c:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9c:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9d:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9d:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9e:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:9e:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:9f:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:9f:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a0:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a1:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a1:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a2:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:a2:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a3:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:a3:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a4:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:a4:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:a4:00.0
++ bdf=0000:a4:00.0
+++ cat /sys/bus/pci/devices/0000:a4:00.0/numa_node
++ n=1
++ printf '  %s  %-9s  NUMA %s\n' 0000:a4:00.0 AMD-CDNA 1
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+  0000:a4:00.0  AMD-CDNA   NUMA 1
+++ cat /sys/bus/pci/devices/0000:a5:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a5:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a6:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a6:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a6:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a6:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a6:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a6:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:a6:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:a6:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:aa:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:aa:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ab:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ab:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ac:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ac:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b2:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b2:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b3:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b3:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b8:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b8:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b8:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b8:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:b8:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:b8:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:01.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:01.2/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bd:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:bd:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:be:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:be:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:be:00.1/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:be:00.1/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:bf:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:bf:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c0:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c0:01.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c0:01.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c0:02.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c0:02.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c1:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c1:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c2:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c2:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c3:00.0/vendor
++ v=0x1dd8
+++ cat /sys/bus/pci/devices/0000:c3:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c8:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c8:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c9:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c9:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:c9:00.5/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:c9:00.5/class
++ c=0x108000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:cf:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:cf:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d0:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d1:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d1:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d1:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d1:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d1:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d1:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d1:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d1:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d2:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d2:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d3:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d3:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d4:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:d4:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d5:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d5:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d6:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:d6:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d7:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:d7:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d8:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:d8:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:d9:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:d9:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:d9:00.0
++ bdf=0000:d9:00.0
+++ cat /sys/bus/pci/devices/0000:d9:00.0/numa_node
++ n=1
++ printf '  %s  %-9s  NUMA %s\n' 0000:d9:00.0 AMD-CDNA 1
++ for d in /sys/bus/pci/devices/*
+  0000:d9:00.0  AMD-CDNA   NUMA 1
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:da:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:da:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:db:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:db:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:db:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:db:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:db:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:db:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:db:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:db:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:df:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:df:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e0:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e1:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e1:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:00.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:00.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:00.2/class
++ c=0x080600
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:00.3/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:00.3/class
++ c=0x080700
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:01.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:01.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:01.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:01.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:02.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:02.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:03.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:03.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:04.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:04.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:05.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:05.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:07.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:07.0/class
++ c=0x060000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:07.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:07.1/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e7:07.2/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:e7:07.2/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e8:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e8:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e9:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e9:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e9:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e9:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e9:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e9:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:e9:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:e9:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ea:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ea:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:eb:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:eb:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ec:00.0/vendor
++ v=0x15b3
+++ cat /sys/bus/pci/devices/0000:ec:00.0/class
++ c=0x020000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ed:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ed:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ee:10.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:ee:10.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:ef:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:ef:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f0:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:f0:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f1:00.0/vendor
++ v=0x1002
+++ cat /sys/bus/pci/devices/0000:f1:00.0/class
++ c=0x120000
++ case "$v:$c" in
++ vendor_name=AMD-CDNA
+++ basename /sys/bus/pci/devices/0000:f1:00.0
++ bdf=0000:f1:00.0
+++ cat /sys/bus/pci/devices/0000:f1:00.0/numa_node
++ n=1
++ printf '  %s  %-9s  NUMA %s\n' 0000:f1:00.0 AMD-CDNA 1
++ for d in /sys/bus/pci/devices/*
+  0000:f1:00.0  AMD-CDNA   NUMA 1
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f2:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f2:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f3:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f3:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f3:04.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f3:04.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f3:08.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f3:08.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f3:0c.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f3:0c.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f7:00.0/vendor
++ v=0x144d
+++ cat /sys/bus/pci/devices/0000:f7:00.0/class
++ c=0x010802
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f8:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f8:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:f9:00.0/vendor
++ v=0x1000
+++ cat /sys/bus/pci/devices/0000:f9:00.0/class
++ c=0x060400
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:fb:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:fb:00.0/class
++ c=0x130000
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:fc:00.0/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:fc:00.0/class
++ c=0x010601
++ case "$v:$c" in
++ continue
++ for d in /sys/bus/pci/devices/*
++ local v c n bdf vendor_name
+++ cat /sys/bus/pci/devices/0000:fc:00.1/vendor
++ v=0x1022
+++ cat /sys/bus/pci/devices/0000:fc:00.1/class
++ c=0x010601
++ case "$v:$c" in
++ continue
++ echo
++ echo '--- vendor-specific topology ---'
+
++ command -v nvidia-smi
+--- vendor-specific topology ---
++ command -v rocm-smi
++ echo '  [rocm-smi --showtopo --showtoponuma]'
+  [rocm-smi --showtopo --showtoponuma]
++ rocm-smi --showtopo --showtoponuma
++ sed 's/^/    /'
++ head -30
+    WARNING: AMD GPU device(s) is/are in a low-power state. Check power control/runtime_status
+    
+    
+    
+    ============================ ROCm System Management Interface ============================
+    ================================ Weight between two GPUs =================================
+           GPU0         GPU1         GPU2         GPU3         GPU4         GPU5         GPU6         GPU7         
+    GPU0   0            15           15           15           15           15           15           15           
+    GPU1   15           0            15           15           15           15           15           15           
+    GPU2   15           15           0            15           15           15           15           15           
+    GPU3   15           15           15           0            15           15           15           15           
+    GPU4   15           15           15           15           0            15           15           15           
+    GPU5   15           15           15           15           15           0            15           15           
+    GPU6   15           15           15           15           15           15           0            15           
+    GPU7   15           15           15           15           15           15           15           0            
+    
+    ================================= Hops between two GPUs ==================================
+           GPU0         GPU1         GPU2         GPU3         GPU4         GPU5         GPU6         GPU7         
+    GPU0   0            1            1            1            1            1            1            1            
+    GPU1   1            0            1            1            1            1            1            1            
+    GPU2   1            1            0            1            1            1            1            1            
+    GPU3   1            1            1            0            1            1            1            1            
+    GPU4   1            1            1            1            0            1            1            1            
+    GPU5   1            1            1            1            1            0            1            1            
+    GPU6   1            1            1            1            1            1            0            1            
+    GPU7   1            1            1            1            1            1            1            0            
+    
+    =============================== Link Type between two GPUs ===============================
+           GPU0         GPU1         GPU2         GPU3         GPU4         GPU5         GPU6         GPU7         
+    GPU0   0            XGMI         XGMI         XGMI         XGMI         XGMI         XGMI         XGMI         
++ echo
++ echo '--- numactl ---'
++ command -v numactl
+
+--- numactl ---
++ numactl -H
++ head -20
+available: 2 nodes (0-1)
+node 0 cpus: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191
+node 0 size: 1547777 MB
+node 0 free: 1025594 MB
+node 1 cpus: 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 192 193 194 195 196 197 198 199 200 201 202 203 204 205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223 224 225 226 227 228 229 230 231 232 233 234 235 236 237 238 239 240 241 242 243 244 245 246 247 248 249 250 251 252 253 254 255
+node 1 size: 1548174 MB
+node 1 free: 1353313 MB
+node distances:
+node   0   1 
+  0:  10  32 
+  1:  32  10 
++ echo =================================================
+=================================================
+++ set -e -o pipefail
++ write_bench_meta hicache_file
++ local cache_mode=hicache_file
++ local size_arg=192
++ [[ hicache_file != hicache* ]]
++ local meta=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/bench_meta.json
++ python3 - /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/bench_meta.json
++ local server_log=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log
++ build_server_cmd hicache_file /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log
++ local mode=hicache_file logfile=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log
++ cmd=('numactl' '--interleave=0,1' 'python3' '-m' 'sglang.launch_server' '--model-path' '/data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528' '--tp' '8' '--host' 'localhost' '--port' '30000' '--mem-fraction-static' '0.85' '--watchdog-timeout' '1200' '--enable-metrics' '--enable-cache-report' '--trust-remote-code')
++ local cmd
++ '[' -n deepseek-r1 ']'
++ cmd+=(--reasoning-parser "$REASONING_PARSER")
++ '[' -n '' ']'
++ case "$MODEL_FAMILY" in
++ cmd+=(--kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 32768 --max-prefill-tokens 32768)
++ is_rocm_gpu_env
++ '[' -e /dev/kfd ']'
++ export ROCM_QUICK_REDUCE_QUANTIZATION=INT4
++ ROCM_QUICK_REDUCE_QUANTIZATION=INT4
++ export SAFETENSORS_FAST_GPU=1
++ SAFETENSORS_FAST_GPU=1
++ case "$MODEL_FAMILY" in
++ cmd+=(--attention-backend aiter)
++ case "$mode" in
++ local store_dir=/tmp/hicache_file_store/DeepSeek-R1-0528_hicache_file_size_192
++ rm -rf /tmp/hicache_file_store/DeepSeek-R1-0528_hicache_file_size_192
++ mkdir -p /tmp/hicache_file_store/DeepSeek-R1-0528_hicache_file_size_192
++ HICACHE_FILE_STORE_DIR=/tmp/hicache_file_store/DeepSeek-R1-0528_hicache_file_size_192
++ cmd+=(--enable-hierarchical-cache --hicache-size "$HICACHE_SIZE" --hicache-mem-layout page_first_direct --hicache-io-backend kernel --hicache-write-policy write_through --hicache-storage-backend file --hicache-storage-prefetch-policy best_effort)
++ export SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR=/tmp/hicache_file_store/DeepSeek-R1-0528_hicache_file_size_192
++ SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR=/tmp/hicache_file_store/DeepSeek-R1-0528_hicache_file_size_192
++ echo '>>> Starting SGLang server (cache_mode=hicache_file)'
++ tee /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log
+>>> Starting SGLang server (cache_mode=hicache_file)
++ echo 'numactl --interleave=0,1 python3 -m sglang.launch_server --model-path /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 --tp 8 --host localhost --port 30000 --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 32768 --max-prefill-tokens 32768 --attention-backend aiter --enable-hierarchical-cache --hicache-size 192 --hicache-mem-layout page_first_direct --hicache-io-backend kernel --hicache-write-policy write_through --hicache-storage-backend file --hicache-storage-prefetch-policy best_effort'
++ tee -a /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log
+numactl --interleave=0,1 python3 -m sglang.launch_server --model-path /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 --tp 8 --host localhost --port 30000 --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 32768 --max-prefill-tokens 32768 --attention-backend aiter --enable-hierarchical-cache --hicache-size 192 --hicache-mem-layout page_first_direct --hicache-io-backend kernel --hicache-write-policy write_through --hicache-storage-backend file --hicache-storage-prefetch-policy best_effort
++ SERVER_PID=79051
++ wait_for_server /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log
++ local logfile=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log
++ numactl --interleave=0,1 python3 -m sglang.launch_server --model-path /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 --tp 8 --host localhost --port 30000 --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 32768 --max-prefill-tokens 32768 --attention-backend aiter --enable-hierarchical-cache --hicache-size 192 --hicache-mem-layout page_first_direct --hicache-io-backend kernel --hicache-write-policy write_through --hicache-storage-backend file --hicache-storage-prefetch-policy best_effort
++ tee -a /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log
+++ date +%s
++ local deadline=1778230666
++ echo '>>> Waiting for server to be ready (timeout=900s, log='\''/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log'\'')...'
+>>> Waiting for server to be ready (timeout=900s, log='/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-HiCache-MI355X_cascade/hicache_file/size_192/server.log')...
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229766 -ge 1778230666 ']'
++ sleep 5
+/sgl-workspace/sglang/python/sglang/launch_server.py:54: UserWarning: 'python -m sglang.launch_server' is still supported, but 'sglang serve' is the recommended entrypoint.
+  Example: sglang serve --model-path <model> [options]
+  warnings.warn(
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229771 -ge 1778230666 ']'
++ sleep 5
+[2026-05-08 08:42:52] Enable Aiter AllReduce Fusion for DeepseekV3ForCausalLM
+[2026-05-08 08:42:52] Kernel io backend does not support page first direct layout, switching to direct io backend
+[2026-05-08 08:42:53] aiter fused_qk_norm_mrope_3d kernel available
+[2026-05-08 08:42:53] server_args=ServerArgs(model_path='/data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528', tokenizer_path='/data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528', tokenizer_mode='auto', tokenizer_backend='huggingface', tokenizer_worker_num=1, skip_tokenizer_init=False, load_format='auto', model_loader_extra_config='{}', trust_remote_code=True, context_length=65536, is_embedding=False, enable_multimodal=None, revision=None, model_impl='auto', host='localhost', port=30000, fastapi_root_path='', grpc_mode=False, skip_server_warmup=False, warmups=None, nccl_port=None, checkpoint_engine_wait_weights_before_ready=False, ssl_keyfile=None, ssl_certfile=None, ssl_ca_certs=None, ssl_keyfile_password=None, enable_ssl_refresh=False, enable_http2=False, dtype='auto', quantization=None, quantization_param_path=None, kv_cache_dtype='fp8_e4m3', enable_fp32_lm_head=False, modelopt_quant=None, modelopt_checkpoint_restore_path=None, modelopt_checkpoint_save_path=None, modelopt_export_path=None, quantize_and_serve=False, rl_quant_profile=None, mem_fraction_static=0.7224999999999999, max_running_requests=None, max_queued_requests=None, max_total_tokens=None, chunked_prefill_size=32768, enable_dynamic_chunking=False, max_prefill_tokens=32768, prefill_max_requests=None, schedule_policy='fcfs', enable_priority_scheduling=False, disable_priority_preemption=False, default_priority_value=None, abort_on_priority_when_disabled=False, schedule_low_priority_values_first=False, priority_scheduling_preemption_threshold=10, schedule_conservativeness=1.0, page_size=64, swa_full_tokens_ratio=0.8, disable_hybrid_swa_memory=False, radix_eviction_policy='lru', enable_prefill_delayer=False, prefill_delayer_max_delay_passes=30, prefill_delayer_token_usage_low_watermark=None, prefill_delayer_forward_passes_buckets=None, prefill_delayer_wait_seconds_buckets=None, device='cuda', tp_size=8, pp_size=1, pp_max_micro_batch_size=None, pp_async_batch_depth=0, stream_interval=1, batch_notify_size=16, stream_response_default_include_usage=False, incremental_streaming_output=False, enable_streaming_session=False, random_seed=458268386, constrained_json_whitespace_pattern=None, constrained_json_disable_any_whitespace=False, watchdog_timeout=1200.0, soft_watchdog_timeout=None, dist_timeout=None, download_dir=None, model_checksum=None, base_gpu_id=0, gpu_id_step=1, sleep_on_idle=False, use_ray=False, custom_sigquit_handler=None, log_level='info', log_level_http=None, log_requests=False, log_requests_level=2, log_requests_format='text', log_requests_target=None, uvicorn_access_log_exclude_prefixes=[], crash_dump_folder=None, show_time_cost=False, enable_metrics=True, grpc_http_sidecar_port=None, enable_mfu_metrics=False, enable_metrics_for_all_schedulers=False, tokenizer_metrics_custom_labels_header='x-custom-labels', tokenizer_metrics_allowed_custom_labels=None, extra_metric_labels=None, bucket_time_to_first_token=None, bucket_inter_token_latency=None, bucket_e2e_request_latency=None, prompt_tokens_buckets=None, generation_tokens_buckets=None, gc_warning_threshold_secs=0.0, decode_log_interval=40, enable_request_time_stats_logging=False, kv_events_config=None, enable_trace=False, otlp_traces_endpoint='localhost:4317', export_metrics_to_file=False, export_metrics_to_file_dir=None, api_key=None, admin_api_key=None, served_model_name='/data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528', weight_version='default', chat_template=None, hf_chat_template_name=None, completion_template=None, file_storage_path='sglang_storage', enable_cache_report=True, reasoning_parser='deepseek-r1', strip_thinking_cache=False, tool_call_parser=None, tool_server=None, sampling_defaults='model', dp_size=1, load_balance_method='round_robin', attn_cp_size=1, moe_dp_size=1, dist_init_addr=None, nnodes=1, node_rank=0, json_model_override_args='{}', preferred_sampling_params=None, enable_lora=None, enable_lora_overlap_loading=None, max_lora_rank=None, lora_target_modules=None, lora_paths=None, max_loaded_loras=None, max_loras_per_batch=8, lora_eviction_policy='lru', lora_backend='csgmv', max_lora_chunk_size=16, experts_shared_outer_loras=None, lora_use_virtual_experts=False, lora_strict_loading=False, lora_drain_wait_threshold=0.0, attention_backend='aiter', decode_attention_backend=None, prefill_attention_backend=None, sampling_backend='pytorch', grammar_backend='xgrammar', mm_attention_backend=None, fp8_gemm_runner_backend='auto', fp4_gemm_runner_backend='auto', nsa_prefill_backend=None, nsa_decode_backend=None, disable_flashinfer_autotune=False, mamba_backend='triton', speculative_algorithm=None, speculative_draft_model_path=None, speculative_draft_model_revision=None, speculative_draft_load_format=None, speculative_num_steps=None, speculative_eagle_topk=None, speculative_num_draft_tokens=None, speculative_dflash_block_size=None, speculative_dflash_draft_window_size=None, speculative_accept_threshold_single=1.0, speculative_accept_threshold_acc=1.0, speculative_token_map=None, speculative_attention_mode='prefill', speculative_draft_attention_backend=None, speculative_moe_runner_backend='auto', speculative_moe_a2a_backend=None, speculative_draft_model_quantization=None, speculative_adaptive=False, speculative_adaptive_config=None, speculative_skip_dp_mlp_sync=False, speculative_ngram_min_bfs_breadth=1, speculative_ngram_max_bfs_breadth=10, speculative_ngram_match_type='BFS', speculative_ngram_max_trie_depth=18, speculative_ngram_capacity=10000000, speculative_ngram_external_corpus_path=None, speculative_ngram_external_sam_budget=0, speculative_ngram_external_corpus_max_tokens=10000000, enable_multi_layer_eagle=False, ep_size=1, moe_a2a_backend='none', moe_runner_backend='auto', record_nolora_graph=True, flashinfer_mxfp4_moe_precision='default', enable_flashinfer_allreduce_fusion=False, enforce_disable_flashinfer_allreduce_fusion=False, enable_aiter_allreduce_fusion=False, deepep_mode='auto', ep_num_redundant_experts=0, ep_dispatch_algorithm=None, init_expert_location='trivial', enable_eplb=False, eplb_algorithm='auto', eplb_rebalance_num_iterations=1000, eplb_rebalance_layers_per_chunk=None, eplb_min_rebalancing_utilization_threshold=1.0, expert_distribution_recorder_mode=None, expert_distribution_recorder_buffer_size=1000, enable_expert_distribution_metrics=False, deepep_config=None, moe_dense_tp_size=None, elastic_ep_backend=None, enable_elastic_expert_backup=False, mooncake_ib_device=None, elastic_ep_rejoin=False, max_mamba_cache_size=None, mamba_ssm_dtype=None, mamba_full_memory_ratio=0.9, mamba_scheduler_strategy='no_buffer', mamba_track_interval=256, linear_attn_backend='triton', linear_attn_decode_backend=None, linear_attn_prefill_backend=None, enable_hierarchical_cache=True, hicache_ratio=2.0, hicache_size=192, hicache_write_policy='write_through', hicache_io_backend='direct', hicache_mem_layout='page_first_direct', hicache_storage_backend='file', hicache_storage_prefetch_policy='best_effort', hicache_storage_backend_extra_config=None, enable_hisparse=False, hisparse_config=None, enable_lmcache=False, kt_weight_path=None, kt_method='AMXINT4', kt_cpuinfer=None, kt_threadpool_count=2, kt_num_gpu_experts=None, kt_max_deferred_experts_per_token=None, dllm_algorithm=None, dllm_algorithm_config=None, cpu_offload_gb=0, offload_group_size=-1, offload_num_in_group=1, offload_prefetch_step=1, offload_mode='cpu', enable_mis=False, disable_radix_cache=False, cuda_graph_max_bs=512, cuda_graph_bs=[1, 2, 4, 8, 12, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], disable_cuda_graph=False, disable_cuda_graph_padding=False, enable_breakable_cuda_graph=False, enable_profile_cuda_graph=False, enable_cudagraph_gc=False, debug_cuda_graph=False, enable_layerwise_nvtx_marker=False, enable_nccl_nvls=False, enable_symm_mem=False, disable_flashinfer_cutlass_moe_fp4_allgather=False, enable_tokenizer_batch_encode=False, disable_tokenizer_batch_decode=False, disable_outlines_disk_cache=False, disable_custom_all_reduce=False, enable_mscclpp=False, enable_torch_symm_mem=False, pre_warm_nccl=False, disable_overlap_schedule=False, enable_mixed_chunk=False, enable_dp_attention=False, enable_dp_attention_local_control_broadcast=False, enable_dp_lm_head=False, enable_two_batch_overlap=False, enable_single_batch_overlap=False, tbo_token_distribution_threshold=0.48, enable_torch_compile=False, disable_piecewise_cuda_graph=True, enforce_piecewise_cuda_graph=False, enable_torch_compile_debug_mode=False, torch_compile_max_bs=32, piecewise_cuda_graph_max_tokens=2048, piecewise_cuda_graph_tokens=[4, 8, 12, 16, 20, 24, 28, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256, 288, 320, 352, 384, 416, 448, 480, 512, 576, 640, 704, 768, 832, 896, 960, 1024, 1280, 1536, 1792, 2048], piecewise_cuda_graph_compiler='eager', torchao_config='', enable_nan_detection=False, enable_p2p_check=False, triton_attention_reduce_in_fp32=False, triton_attention_num_kv_splits=16, triton_attention_split_tile_size=None, num_continuous_decode_steps=1, delete_ckpt_after_loading=False, enable_memory_saver=False, enable_weights_cpu_backup=False, enable_draft_weights_cpu_backup=False, allow_auto_truncate=False, enable_custom_logit_processor=False, flashinfer_mla_disable_ragged=False, disable_shared_experts_fusion=False, enforce_shared_experts_fusion=False, disable_chunked_prefix_cache=False, disable_fast_image_processor=False, keep_mm_feature_on_device=False, enable_return_hidden_states=False, enable_return_routed_experts=False, enable_return_indexer_topk=False, scheduler_recv_interval=1, numa_node=None, enable_deterministic_inference=False, rl_on_policy_target=None, enable_attn_tp_input_scattered=False, gc_threshold=None, enable_nsa_prefill_context_parallel=False, nsa_prefill_cp_mode='round-robin-split', enable_fused_qk_norm_rope=False, enable_precise_embedding_interpolation=False, enable_fused_moe_sum_all_reduce=False, enable_prefill_context_parallel=False, prefill_cp_mode='in-seq-split', enable_dynamic_batch_tokenizer=False, dynamic_batch_tokenizer_batch_size=32, dynamic_batch_tokenizer_batch_timeout=0.002, debug_tensor_dump_output_folder=None, debug_tensor_dump_layers=None, debug_tensor_dump_input_file=None, debug_tensor_dump_inject=False, disaggregation_mode='null', disaggregation_transfer_backend='mooncake', disaggregation_bootstrap_port=8998, disaggregation_ib_device=None, disaggregation_decode_enable_radix_cache=False, disaggregation_decode_enable_offload_kvcache=False, num_reserved_decode_tokens=512, disaggregation_decode_polling_interval=1, encoder_only=False, language_only=False, encoder_transfer_backend='zmq_to_scheduler', encoder_urls=[], enable_adaptive_dispatch_to_encoder=False, custom_weight_loader=[], weight_loader_disable_mmap=False, weight_loader_prefetch_checkpoints=False, weight_loader_prefetch_num_threads=4, remote_instance_weight_loader_seed_instance_ip=None, remote_instance_weight_loader_seed_instance_service_port=None, remote_instance_weight_loader_send_weights_group_ports=None, remote_instance_weight_loader_backend='nccl', remote_instance_weight_loader_start_seed_via_transfer_engine=False, engine_info_bootstrap_port=6789, modelexpress_config=None, enable_pdmux=False, pdmux_config_path=None, sm_group_num=8, enable_broadcast_mm_inputs_process=False, enable_prefix_mm_cache=False, mm_enable_dp_encoder=False, mm_process_config={}, limit_mm_data_per_request=None, enable_mm_global_cache=False, decrypted_config_file=None, decrypted_draft_config_file=None, forward_hooks=None, enable_quant_communications=False, msprobe_dump_config=None)
+[2026-05-08 08:42:53] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:42:53] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:42:53] Using default HuggingFace chat template with detected content format: string
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229776 -ge 1778230666 ']'
++ sleep 5
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+[aiter] waiting for baton release at /tmp/aiter_configs/bf16_tuned_gemm.csv.lock
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv
+/sgl-workspace/aiter/aiter/jit/core.py:219: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  merge_df = pd.concat([df for _, df in source_pairs], ignore_index=True)
+[2026-05-08 08:42:59 TP3] Process 79223 gpu_id 3 is running on CPUs: [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191]
+[2026-05-08 08:43:00 TP1] Process 79221 gpu_id 1 is running on CPUs: [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159]
+[2026-05-08 08:43:00 TP3] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:43:00 TP0] Process 79220 gpu_id 0 is running on CPUs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143]
+[2026-05-08 08:43:00 TP3] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:43:00 TP3] Init torch distributed begin.
+[2026-05-08 08:43:00 TP6] Process 79226 gpu_id 6 is running on CPUs: [96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239]
+[2026-05-08 08:43:00 TP7] Process 79227 gpu_id 7 is running on CPUs: [112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255]
+[2026-05-08 08:43:00 TP1] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:43:00 TP1] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:43:00 TP1] Init torch distributed begin.
+[2026-05-08 08:43:00 TP2] Process 79222 gpu_id 2 is running on CPUs: [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175]
+[2026-05-08 08:43:00 TP4] Process 79224 gpu_id 4 is running on CPUs: [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207]
+[2026-05-08 08:43:00 TP5] Process 79225 gpu_id 5 is running on CPUs: [80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223]
+[2026-05-08 08:43:00 TP0] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:43:00 TP0] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:43:00 TP0] Init torch distributed begin.
+[2026-05-08 08:43:00 TP6] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:43:00 TP6] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:43:00 TP7] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:43:00 TP6] Init torch distributed begin.
+[2026-05-08 08:43:00 TP7] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:43:00] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:43:00 TP7] Init torch distributed begin.
+[2026-05-08 08:43:00] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:43:00 TP2] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:43:00 TP2] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:43:00 TP5] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:43:00 TP4] Fixing v5 tokenizer component mismatch for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528: pre_tokenizer Metaspace -> Sequence, decoder Sequence -> ByteLevel
+[2026-05-08 08:43:00 TP5] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:43:00 TP4] Restoring add_bos_token=True for /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 (was False after v5 loading)
+[2026-05-08 08:43:00 TP2] Init torch distributed begin.
+[2026-05-08 08:43:00 TP5] Init torch distributed begin.
+[2026-05-08 08:43:00 TP4] Init torch distributed begin.
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[2026-05-08 08:43:00 TP2] [AR] All-reduce call path: NCCL (custom AR disabled)
+[2026-05-08 08:43:00 TP0] [AR] All-reduce call path: NCCL (custom AR disabled)
+[2026-05-08 08:43:00 TP1] [AR] All-reduce call path: NCCL (custom AR disabled)
+[2026-05-08 08:43:00 TP3] [AR] All-reduce call path: NCCL (custom AR disabled)
+[2026-05-08 08:43:00 TP5] [AR] All-reduce call path: NCCL (custom AR disabled)
+[2026-05-08 08:43:00 TP7] [AR] All-reduce call path: NCCL (custom AR disabled)
+[2026-05-08 08:43:00 TP6] [AR] All-reduce call path: NCCL (custom AR disabled)
+[2026-05-08 08:43:00 TP4] [AR] All-reduce call path: NCCL (custom AR disabled)
+[Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+[2026-05-08 08:43:00 TP0] sglang is using nccl==2.27.7
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229781 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229786 -ge 1778230666 ']'
++ sleep 5
+[aiter] import [module_custom_all_reduce] under /sgl-workspace/aiter/aiter/jit/module_custom_all_reduce.so
+[aiter] import [module_custom_all_reduce] under /sgl-workspace/aiter/aiter/jit/module_custom_all_reduce.so
+[aiter] import [module_custom_all_reduce] under /sgl-workspace/aiter/aiter/jit/module_custom_all_reduce.so
+[aiter] import [module_custom_all_reduce] under /sgl-workspace/aiter/aiter/jit/module_custom_all_reduce.so
+[aiter] import [module_custom_all_reduce] under /sgl-workspace/aiter/aiter/jit/module_custom_all_reduce.so
+[aiter] import [module_custom_all_reduce] under /sgl-workspace/aiter/aiter/jit/module_custom_all_reduce.so
+[aiter] import [module_custom_all_reduce] under /sgl-workspace/aiter/aiter/jit/module_custom_all_reduce.so
+[aiter] import [module_custom_all_reduce] under /sgl-workspace/aiter/aiter/jit/module_custom_all_reduce.so
+[2026-05-08 08:43:10 TP3] [AR] Using AiterCustomAllreduce (AMD default)
+[2026-05-08 08:43:10 TP0] [AR] Using AiterCustomAllreduce (AMD default)
+[2026-05-08 08:43:10 TP1] [AR] Using AiterCustomAllreduce (AMD default)
+[2026-05-08 08:43:10 TP6] [AR] Using AiterCustomAllreduce (AMD default)
+[2026-05-08 08:43:10 TP5] [AR] Using AiterCustomAllreduce (AMD default)
+[2026-05-08 08:43:10 TP4] [AR] Using AiterCustomAllreduce (AMD default)
+[2026-05-08 08:43:10 TP7] [AR] Using AiterCustomAllreduce (AMD default)
+[2026-05-08 08:43:10 TP2] [AR] Using AiterCustomAllreduce (AMD default)
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[2026-05-08 08:43:10 TP0] Init torch distributed ends. elapsed=10.35 s, mem usage=10.04 GB
+[2026-05-08 08:43:10 TP7] Init torch distributed ends. elapsed=10.22 s, mem usage=10.32 GB
+[2026-05-08 08:43:10 TP6] Init torch distributed ends. elapsed=10.25 s, mem usage=10.33 GB
+[2026-05-08 08:43:10 TP5] Init torch distributed ends. elapsed=10.13 s, mem usage=10.31 GB
+[2026-05-08 08:43:10 TP4] Init torch distributed ends. elapsed=10.13 s, mem usage=10.40 GB
+[2026-05-08 08:43:10 TP3] Init torch distributed ends. elapsed=10.66 s, mem usage=10.45 GB
+[2026-05-08 08:43:10 TP2] Init torch distributed ends. elapsed=10.14 s, mem usage=10.46 GB
+[2026-05-08 08:43:10 TP1] Init torch distributed ends. elapsed=10.51 s, mem usage=10.45 GB
+/opt/venv/lib/python3.10/site-packages/apex/transformer/functional/fused_rope.py:49: UserWarning: Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0
+  warnings.warn("Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0", UserWarning)
+/opt/venv/lib/python3.10/site-packages/apex/transformer/functional/fused_rope.py:49: UserWarning: Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0
+  warnings.warn("Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0", UserWarning)
+/opt/venv/lib/python3.10/site-packages/apex/transformer/functional/fused_rope.py:49: UserWarning: Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0
+  warnings.warn("Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0", UserWarning)
+/opt/venv/lib/python3.10/site-packages/apex/transformer/functional/fused_rope.py:49: UserWarning: Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0
+  warnings.warn("Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0", UserWarning)
+/opt/venv/lib/python3.10/site-packages/apex/transformer/functional/fused_rope.py:49: UserWarning: Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0
+  warnings.warn("Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0", UserWarning)
+/opt/venv/lib/python3.10/site-packages/apex/transformer/functional/fused_rope.py:49: UserWarning: Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0
+  warnings.warn("Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0", UserWarning)
+/opt/venv/lib/python3.10/site-packages/apex/transformer/functional/fused_rope.py:49: UserWarning: Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0
+  warnings.warn("Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0", UserWarning)
+/opt/venv/lib/python3.10/site-packages/apex/transformer/functional/fused_rope.py:49: UserWarning: Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0
+  warnings.warn("Aiter backend is selected for fused RoPE. This has lower precision. To disable aiter, export USE_ROCM_AITER_ROPE_BACKEND=0", UserWarning)
+[2026-05-08 08:43:11 TP6] aiter fused_qk_norm_mrope_3d kernel available
+[2026-05-08 08:43:11 TP5] aiter fused_qk_norm_mrope_3d kernel available
+[2026-05-08 08:43:11 TP3] aiter fused_qk_norm_mrope_3d kernel available
+[2026-05-08 08:43:11 TP1] aiter fused_qk_norm_mrope_3d kernel available
+[2026-05-08 08:43:11 TP2] aiter fused_qk_norm_mrope_3d kernel available
+[2026-05-08 08:43:11 TP4] aiter fused_qk_norm_mrope_3d kernel available
+[2026-05-08 08:43:11 TP7] aiter fused_qk_norm_mrope_3d kernel available
+[2026-05-08 08:43:11 TP0] aiter fused_qk_norm_mrope_3d kernel available
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229791 -ge 1778230666 ']'
++ sleep 5
+[2026-05-08 08:43:12 TP3] Load weight begin. avail mem=276.87 GB
+[2026-05-08 08:43:12 TP1] Load weight begin. avail mem=276.87 GB
+[2026-05-08 08:43:12 TP2] Load weight begin. avail mem=276.86 GB
+[2026-05-08 08:43:12 TP6] Load weight begin. avail mem=276.99 GB
+[2026-05-08 08:43:12 TP5] Load weight begin. avail mem=277.01 GB
+[2026-05-08 08:43:12 TP7] Load weight begin. avail mem=277.00 GB
+[2026-05-08 08:43:12 TP4] Load weight begin. avail mem=276.92 GB
+[2026-05-08 08:43:12 TP0] Load weight begin. avail mem=277.28 GB
+[2026-05-08 08:43:12 TP0] Detected fp8 checkpoint.
+[2026-05-08 08:43:12 TP0] Shared experts fusion optimization enabled.
+Multi-thread loading shards:   0% Completed | 0/163 [00:00<?, ?it/s]Multi-thread loading shards:   1% Completed | 1/163 [00:00<01:53,  1.42it/s]Multi-thread loading shards:   2% Completed | 4/163 [00:01<00:40,  3.97it/s]Multi-thread loading shards:   5% Completed | 8/163 [00:01<00:17,  8.71it/s]Multi-thread loading shards:   7% Completed | 11/163 [00:01<00:19,  7.86it/s]Multi-thread loading shards:   8% Completed | 13/163 [00:02<00:22,  6.65it/s]Multi-thread loading shards:  10% Completed | 16/163 [00:02<00:25,  5.74it/s]Multi-thread loading shards:  12% Completed | 20/163 [00:03<00:26,  5.43it/s]Multi-thread loading shards:  13% Completed | 22/163 [00:03<00:21,  6.41it/s]Multi-thread loading shards:  16% Completed | 26/163 [00:03<00:14,  9.54it/s]Multi-thread loading shards:  17% Completed | 28/163 [00:04<00:18,  7.43it/s]++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229796 -ge 1778230666 ']'
++ sleep 5
+Multi-thread loading shards:  18% Completed | 30/163 [00:04<00:16,  7.94it/s]Multi-thread loading shards:  20% Completed | 32/163 [00:04<00:14,  9.17it/s]Multi-thread loading shards:  21% Completed | 35/163 [00:04<00:15,  8.42it/s]Multi-thread loading shards:  23% Completed | 37/163 [00:05<00:14,  8.92it/s]Multi-thread loading shards:  24% Completed | 39/163 [00:05<00:12,  9.95it/s]Multi-thread loading shards:  25% Completed | 41/163 [00:05<00:11, 10.50it/s]Multi-thread loading shards:  26% Completed | 43/163 [00:05<00:14,  8.35it/s]Multi-thread loading shards:  28% Completed | 45/163 [00:05<00:12,  9.66it/s]Multi-thread loading shards:  29% Completed | 47/163 [00:07<00:27,  4.20it/s]Multi-thread loading shards:  30% Completed | 49/163 [00:07<00:21,  5.36it/s]Multi-thread loading shards:  32% Completed | 52/163 [00:07<00:15,  7.29it/s]Multi-thread loading shards:  33% Completed | 54/163 [00:07<00:17,  6.16it/s]Multi-thread loading shards:  35% Completed | 57/163 [00:07<00:12,  8.38it/s]Multi-thread loading shards:  36% Completed | 59/163 [00:08<00:12,  8.50it/s]Multi-thread loading shards:  38% Completed | 62/163 [00:08<00:12,  8.12it/s]Multi-thread loading shards:  39% Completed | 64/163 [00:08<00:10,  9.03it/s]Multi-thread loading shards:  40% Completed | 66/163 [00:08<00:10,  9.02it/s]++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229801 -ge 1778230666 ']'
++ sleep 5
+Multi-thread loading shards:  42% Completed | 69/163 [00:09<00:11,  8.08it/s]Multi-thread loading shards:  44% Completed | 71/163 [00:09<00:09,  9.21it/s]Multi-thread loading shards:  45% Completed | 73/163 [00:09<00:09,  9.97it/s]Multi-thread loading shards:  46% Completed | 75/163 [00:10<00:12,  7.27it/s]Multi-thread loading shards:  48% Completed | 79/163 [00:10<00:09,  9.13it/s]Multi-thread loading shards:  50% Completed | 82/163 [00:10<00:06, 11.65it/s]Multi-thread loading shards:  52% Completed | 84/163 [00:11<00:13,  5.91it/s]Multi-thread loading shards:  53% Completed | 86/163 [00:11<00:13,  5.78it/s]Multi-thread loading shards:  53% Completed | 87/163 [00:11<00:12,  6.06it/s]Multi-thread loading shards:  55% Completed | 90/163 [00:12<00:08,  8.22it/s]Multi-thread loading shards:  56% Completed | 92/163 [00:12<00:11,  6.20it/s]Multi-thread loading shards:  58% Completed | 95/163 [00:12<00:08,  7.83it/s]Multi-thread loading shards:  60% Completed | 98/163 [00:13<00:06,  9.94it/s]Multi-thread loading shards:  61% Completed | 100/163 [00:13<00:07,  8.13it/s]Multi-thread loading shards:  63% Completed | 102/163 [00:13<00:06,  9.32it/s]Multi-thread loading shards:  64% Completed | 104/163 [00:13<00:06,  9.78it/s]Multi-thread loading shards:  66% Completed | 107/163 [00:14<00:06,  8.15it/s]Multi-thread loading shards:  67% Completed | 109/163 [00:14<00:05,  9.28it/s]++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229806 -ge 1778230666 ']'
++ sleep 5
+Multi-thread loading shards:  68% Completed | 111/163 [00:14<00:05, 10.27it/s]Multi-thread loading shards:  70% Completed | 114/163 [00:14<00:05,  8.23it/s]Multi-thread loading shards:  71% Completed | 116/163 [00:15<00:05,  7.93it/s]Multi-thread loading shards:  74% Completed | 121/163 [00:15<00:03, 13.22it/s]Multi-thread loading shards:  76% Completed | 124/163 [00:15<00:03, 10.62it/s]Multi-thread loading shards:  77% Completed | 126/163 [00:15<00:03, 10.76it/s]Multi-thread loading shards:  79% Completed | 128/163 [00:17<00:07,  4.69it/s]Multi-thread loading shards:  80% Completed | 131/163 [00:17<00:05,  6.30it/s]Multi-thread loading shards:  82% Completed | 133/163 [00:17<00:04,  7.35it/s]Multi-thread loading shards:  83% Completed | 135/163 [00:17<00:03,  8.53it/s]Multi-thread loading shards:  84% Completed | 137/163 [00:17<00:03,  6.88it/s]Multi-thread loading shards:  85% Completed | 139/163 [00:18<00:03,  7.91it/s]Multi-thread loading shards:  87% Completed | 141/163 [00:18<00:02,  9.22it/s]Multi-thread loading shards:  88% Completed | 143/163 [00:18<00:02,  7.04it/s]Multi-thread loading shards:  89% Completed | 145/163 [00:18<00:02,  8.62it/s]Multi-thread loading shards:  90% Completed | 147/163 [00:18<00:01, 10.24it/s]Multi-thread loading shards:  91% Completed | 149/163 [00:19<00:01, 11.00it/s]++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229811 -ge 1778230666 ']'
++ sleep 5
+Multi-thread loading shards:  93% Completed | 151/163 [00:19<00:01,  7.11it/s]Multi-thread loading shards:  95% Completed | 155/163 [00:19<00:00, 10.71it/s]Multi-thread loading shards:  96% Completed | 157/163 [00:19<00:00, 11.89it/s]Multi-thread loading shards:  98% Completed | 159/163 [00:20<00:00,  9.21it/s]Multi-thread loading shards: 100% Completed | 163/163 [00:20<00:00,  8.06it/s]
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229816 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229821 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229826 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229831 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229836 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229841 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229846 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229851 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229856 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229861 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229866 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229871 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229876 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229881 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229886 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229891 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229896 -ge 1778230666 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778229901 -ge 1778230666 ']'
++ sleep 5
+[2026-05-08 08:45:09 TP3] Using FP8 KV cache but no scaling factors provided. Defaulting to scaling factors of 1.0. This may lead to less accurate results!
+[2026-05-08 08:45:09 TP3] Load weight end. elapsed=117.38 s, type=DeepseekV3ForCausalLM, quant=fp8, fmt=e4m3, avail mem=197.24 GB, mem usage=79.63 GB.
+[2026-05-08 08:45:11 TP1] Using FP8 KV cache but no scaling factors provided. Defaulting to scaling factors of 1.0. This may lead to less accurate results!
+[2026-05-08 08:45:11 TP1] Load weight end. elapsed=119.12 s, type=DeepseekV3ForCausalLM, quant=fp8, fmt=e4m3, avail mem=197.24 GB, mem usage=79.63 GB.
+[2026-05-08 08:45:12 TP5] Using FP8 KV cache but no scaling factors provided. Defaulting to scaling factors of 1.0. This may lead to less accurate results!
+[2026-05-08 08:45:12 TP5] Load weight end. elapsed=120.14 s, type=DeepseekV3ForCausalLM, quant=fp8, fmt=e4m3, avail mem=197.38 GB, mem usage=79.63 GB.
+[2026-05-08 08:45:12 TP6] Using FP8 KV cache but no scaling factors provided. Defaulting to scaling factors of 1.0. This may lead to less accurate results!
+[2026-05-08 08:45:12 TP6] Load weight end. elapsed=120.22 s, type=DeepseekV3ForCausalLM, quant=fp8, fmt=e4m3, avail mem=197.36 GB, mem usage=79.63 GB.
+[2026-05-08 08:45:12 TP2] Using FP8 KV cache but no scaling factors provided. Defaulting to scaling factors of 1.0. This may lead to less accurate results!
+[2026-05-08 08:45:12 TP2] Load weight end. elapsed=120.29 s, type=DeepseekV3ForCausalLM, quant=fp8, fmt=e4m3, avail mem=197.23 GB, mem usage=79.63 GB.
+[2026-05-08 08:45:12 TP7] Using FP8 KV cache but no scaling factors provided. Defaulting to scaling factors of 1.0. This may lead to less accurate results!
+[2026-05-08 08:45:12 TP7] Load weight end. elapsed=120.35 s, type=DeepseekV3ForCausalLM, quant=fp8, fmt=e4m3, avail mem=197.37 GB, mem usage=79.63 GB.
+[2026-05-08 08:45:12 TP4] Using FP8 KV cache but no scaling factors provided. Defaulting to scaling factors of 1.0. This may lead to less accurate results!
+[2026-05-08 08:45:12 TP4] Load weight end. elapsed=120.35 s, type=DeepseekV3ForCausalLM, quant=fp8, fmt=e4m3, avail mem=197.29 GB, mem usage=79.63 GB.
+[2026-05-08 08:45:12 TP0] Using FP8 KV cache but no scaling factors provided. Defaulting to scaling factors of 1.0. This may lead to less accurate results!
+[2026-05-08 08:45:12 TP0] Load weight end. elapsed=120.73 s, type=DeepseekV3ForCausalLM, quant=fp8, fmt=e4m3, avail mem=197.65 GB, mem usage=79.63 GB.
+[2026-05-08 08:45:12 TP0] Using KV cache dtype: torch.float8_e4m3fn
+[2026-05-08 08:45:12 TP0] KV Cache is allocated. #tokens: 3679040, KV size: 120.39 GB
+[2026-05-08 08:45:12 TP0] Memory pool end. avail mem=76.20 GB
+[2026-05-08 08:45:12 TP2] KV Cache is allocated. #tokens: 3679040, KV size: 120.39 GB
+[2026-05-08 08:45:12 TP2] Memory pool end. avail mem=75.78 GB
+[2026-05-08 08:45:12 TP1] KV Cache is allocated. #tokens: 3679040, KV size: 120.39 GB
+[2026-05-08 08:45:12 TP6] KV Cache is allocated. #tokens: 3679040, KV size: 120.39 GB
+[2026-05-08 08:45:12 TP1] Memory pool end. avail mem=75.79 GB
+[2026-05-08 08:45:12 TP6] Memory pool end. avail mem=75.91 GB
+[2026-05-08 08:45:12 TP7] KV Cache is allocated. #tokens: 3679040, KV size: 120.39 GB
+[2026-05-08 08:45:12 TP3] KV Cache is allocated. #tokens: 3679040, KV size: 120.39 GB
+[2026-05-08 08:45:12 TP7] Memory pool end. avail mem=75.92 GB
+[2026-05-08 08:45:12 TP3] Memory pool end. avail mem=75.79 GB
+[2026-05-08 08:45:12 TP4] KV Cache is allocated. #tokens: 3679040, KV size: 120.39 GB
+[2026-05-08 08:45:12 TP4] Memory pool end. avail mem=75.84 GB
+[2026-05-08 08:45:12 TP5] KV Cache is allocated. #tokens: 3679040, KV size: 120.39 GB
+[2026-05-08 08:45:12 TP5] Memory pool end. avail mem=75.93 GB
+[2026-05-08 08:45:13 TP6] Capture cuda graph begin. This can take up to several minutes. avail mem=75.61 GB
+[2026-05-08 08:45:13 TP7] Capture cuda graph begin. This can take up to several minutes. avail mem=75.62 GB
+[2026-05-08 08:45:13 TP1] Capture cuda graph begin. This can take up to several minutes. avail mem=75.49 GB
+[2026-05-08 08:45:13 TP3] Capture cuda graph begin. This can take up to several minutes. avail mem=75.49 GB
+[2026-05-08 08:45:13 TP2] Capture cuda graph begin. This can take up to several minutes. avail mem=75.48 GB
+[2026-05-08 08:45:13 TP0] Capture cuda graph begin. This can take up to several minutes. avail mem=75.90 GB
+[2026-05-08 08:45:13 TP0] Capture cuda graph bs [1, 2, 4, 8, 12, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512]
+[2026-05-08 08:45:13 TP5] Capture cuda graph begin. This can take up to several minutes. avail mem=75.63 GB
+[2026-05-08 08:45:14 TP4] Capture cuda graph begin. This can take up to several minutes. avail mem=75.54 GB
+  0%|          | 0/52 [00:00<?, ?it/s]Capturing batches (bs=512 avail_mem=75.62 GB):   0%|          | 0/52 [00:00<?, ?it/s]

@@ -1,0 +1,148 @@
+diff --git a/benchmark/mmmu/bench_sglang.py b/benchmark/mmmu/bench_sglang.py
+index d9426ae5a..d3230efb6 100644
+--- a/benchmark/mmmu/bench_sglang.py
++++ b/benchmark/mmmu/bench_sglang.py
+@@ -82,7 +82,17 @@ async def process_sample(
+     image = sample["image"]
+     assert image is not None
+     image_path = sample["image_path"]
+-    extra_body = None if lora_path is None else {"lora_path": lora_path}
++    
++    # extra_body = None if lora_path is None else {"lora_path": lora_path}
++    extra_body = {
++        "chat_template_kwargs": {
++            "enable_thinking": True,
++            "clear_thinking": True,
++        }
++    }
++    if lora_path is not None:
++        extra_body["lora_path"] = lora_path
++
+     payload = {
+         "model": "default",
+         "messages": [
+@@ -100,7 +110,8 @@ async def process_sample(
+     if sampling_params:
+         payload.update(sampling_params)
+     response = await client.chat.completions.create(**payload)
+-    return sample, response.choices[0].message.content
++    # print(f"[DEBUG] response.choices={response.choices}")
++    return sample, response # response.choices[0].message.content
+ 
+ 
+ async def process_sample_with_semaphore(
+@@ -119,6 +130,8 @@ async def eval_mmmu(args) -> None:
+     """Main evaluation loop with concurrency control."""
+     eval_args = EvalArgs.from_cli_args(args)
+     sampling_params = get_sampling_params(eval_args)
++    # print(f"\033[33m[DEBUG] eval_args={eval_args}\033[0m")
++    # print(f"\033[33m[DEBUG] sampling_params={sampling_params}\033[0m")
+     samples = prepare_samples(eval_args)
+     lora_path = eval_args.lora_path
+     answer_dict = {}
+@@ -168,21 +181,46 @@ async def eval_mmmu(args) -> None:
+             )
+             for sample in samples
+         ]
+-
++        # print(f"\033[33m[DEBUG] samples[0]={samples[0]}\033[0m \n")
++        completed_count = 0
+         for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
+-            sample, response = await coro
+-            sample["original_response"] = response
+-            answer = (
+-                re.search(args.response_answer_regex, response)
+-                if response is not None
+-                else None
+-            )
+-            process_result(
+-                answer.group(1).strip() if answer else response,
+-                sample,
+-                answer_dict,
+-                out_samples,
+-            )
++            try:
++                sample, response = await coro
++                completed_count += 1
++                sample["reasoning_content"] = response.choices[0].message.reasoning_content # # Jacob: Debug
++                resp_content = response.choices[0].message.content
++                sample["original_response"] = resp_content
++                answer = (
++                    re.search(args.response_answer_regex, resp_content)
++                    if resp_content is not None
++                    else None
++                )
++                process_result(
++                    answer.group(1).strip() if answer else resp_content,
++                    sample,
++                    answer_dict,
++                    out_samples,
++                )
++                # print(f"\033[33m[DEBUG] result sample={sample}\033[0m \n")
++                # print(f"\033[33m[DEBUG] result answer_dict={answer_dict}\033[0m \n")
++                
++                # Debug
++                # print("\n")
++                # print(f"\033[92m[DEBUG] completed_count = {completed_count}\033[0m")
++                # print(f"\033[93m[DEBUG] sample = {sample}\033[0m")
++                # print(f"\033[96m[DEBUG] out_samples = {out_samples}\033[0m")
++                # print(f"\033[95m[DEBUG] sample['id'] = {sample['id']}\033[0m")
++                # print(f"\033[95m[DEBUG] out_samples.keys() = {out_samples.keys()}, len(out_samples)={len(out_samples)}\033[0m")
++                
++                if completed_count % 10 == 0 or completed_count == len(tasks):
++                    args.output_path = "./answer_sglang.json"
++                    save_json(args.output_path, out_samples)
++                if completed_count % 20 == 0:
++                    print(f"\033[92m[DEBUG] #completion: {completed_count}, out_samples len: {len(out_samples)}\033[0m")
++
++            except Exception as e:
++                print(f"\n[ERROR] {e}")
++                continue
+ 
+     if args.profile:
+         print("Stopping profiler...")
+@@ -191,8 +229,8 @@ async def eval_mmmu(args) -> None:
+             print("Profiler stopped")
+ 
+     print(f"Benchmark time: {time.perf_counter() - start}")
+-    args.output_path = "./answer_sglang.json"
+-    save_json(args.output_path, out_samples)
++    # args.output_path = "./answer_sglang.json"
++    # save_json(args.output_path, out_samples)
+     eval_result(
+         model_answer_path=args.output_path,
+         answer_dict=answer_dict,
+diff --git a/benchmark/mmmu/eval_utils.py b/benchmark/mmmu/eval_utils.py
+index b3edd69fc..c94eef68f 100644
+--- a/benchmark/mmmu/eval_utils.py
++++ b/benchmark/mmmu/eval_utils.py
+@@ -386,6 +386,10 @@ def parse_open_response(response):
+     Parse the prediction from the generated response.
+     Return a list of predicted strings or numbers.
+     """
++    # When max_new_tokens is set too low, the reasoning_content in the server response
++    # may be truncated, causing the final response content to be None.
++    if response is None: 
++        return []
+ 
+     # content = content.strip("\n").strip(".").strip(" ")
+     def get_key_subresponses(response):
+@@ -556,8 +560,8 @@ def calculate_ins_level_acc(results: Dict):
+ 
+ def process_result(response, sample, answer_dict, out_samples):
+     if response is None:
+-        return
+-    if sample["question_type"] == "multiple-choice":
++        pred_ans = ""
++    elif sample["question_type"] == "multiple-choice":
+         pred_ans = parse_multi_choice_response(
+             response, sample["all_choices"], sample["index2ans"]
+         )
+@@ -567,6 +571,7 @@ def process_result(response, sample, answer_dict, out_samples):
+     out_samples[sample["id"]] = {
+         "pred_ans": pred_ans,
+         "original_response": sample["original_response"],
++        "reasoning_content": sample["reasoning_content"], # Jacob: Debug
+         "ground_truth": sample["answer"],
+         "question_type": sample["question_type"],
+     }

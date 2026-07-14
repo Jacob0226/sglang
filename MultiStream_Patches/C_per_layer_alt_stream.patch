@@ -1,0 +1,35 @@
+diff --git a/python/sglang/srt/models/deepseek_v2.py b/python/sglang/srt/models/deepseek_v2.py
+index 0eb5d008e..2a1fbd4e6 100644
+--- a/python/sglang/srt/models/deepseek_v2.py
++++ b/python/sglang/srt/models/deepseek_v2.py
+@@ -1914,6 +1914,17 @@ class DeepseekV2Model(nn.Module):
+             else None
+         )
+ 
++        if _is_hip and self.alt_stream is not None:
++            # HIP Graph does literal replay on user-specified streams, unlike
++            # CUDA Graph which re-maps streams via DAG optimization in
++            # cudaGraphInstantiate.  Per-layer streams let each layer's alt
++            # work run independently, enabling inter-layer pipelining.
++            _per_layer_alt_streams = [
++                torch.cuda.Stream() for _ in range(config.num_hidden_layers)
++            ]
++        else:
++            _per_layer_alt_streams = None
++
+         self.layers, self.start_layer, self.end_layer = make_layers(
+             config.num_hidden_layers,
+             lambda idx, prefix: DeepseekV2DecoderLayer(
+@@ -1921,7 +1932,11 @@ class DeepseekV2Model(nn.Module):
+                 layer_id=idx,
+                 quant_config=quant_config,
+                 prefix=prefix,
+-                alt_stream=self.alt_stream,
++                alt_stream=(
++                    _per_layer_alt_streams[idx]
++                    if _per_layer_alt_streams is not None
++                    else self.alt_stream
++                ),
+             ),
+             pp_rank=self.pp_group.rank_in_group,
+             pp_size=self.pp_group.world_size,

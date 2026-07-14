@@ -1,0 +1,309 @@
+[INFO] Step 1: Loading graph-ON trace: results/amd_GLM-5.2-MXFP4/rocm_sgl-dev-v0.5.14-rocm720-mi35x-20260708/prof-TP4_shared-topk-prefill_ON/prof_in1024_out16_conc64_p128/in1024_out16_conc64_p128-AMD-TP-0-DECODE.trace.json.gz
+[INFO] Found 9505 kernels on stream 7
+[INFO] Step 1 written to: Analysis/MI355X/step1_kernel_stats.xlsx
+[INFO] Step 2: Loading graph-OFF trace: results/amd_GLM-5.2-MXFP4/rocm_sgl-dev-v0.5.14-rocm720-mi35x-20260708/prof-TP4_shared-topk-prefill_ON/no-cuda-graph/prof_in1024_out16_conc64_p128/in1024_out16_conc64_p128-AMD-TP-0-DECODE-NoGraph.trace.json.gz
+[INFO] Found 9525 kernels on stream 6
+[INFO] Found nn.Module: DeepseekV2DecoderLayer (78 layers per forward pass)
+[INFO] Sub-module classes: DeepseekV2AttentionMLA, DeepseekV2MLP, DeepseekV2MoE, RMSNorm
+[INFO] Recovered 150 unlinked kernels via GPU-timestamp interpolation
+[INFO] Skipping 5725 kernels outside decoder-layer GPU window (inter-layer / post-layer ops)
+[INFO] Resolving call sites for 76 kernels...
+
+========================================================================================================================
+ Step 1: Kernel Statistics (cuda-graph-ON)
+ Total: 9505 kernel calls, 136.134 ms
+========================================================================================================================
+  Kernel Name                                                                       Count    Sum(us)    Avg(us)    Pct
+  -------------------------------------------------------------------------------- ------ ---------- ---------- ------
+  mfma_moe1_silu_mul_afp4_wfp4_bf16_t32x128x256_pm1_async_v32                         375    36383.6       97.0  26.7%
+  mfma_moe2_afp4_wfp4_bf16_cshuffle_t32x128x256_vscale_fix3_fp4opt_v1_persist_cu25    375    19979.9       53.3  14.7%
+  main_kernel                                                                         780    13662.5       17.5  10.0%
+  _ZN5aiter33reduce_scatter_cross_device_storeIDF16bLi4EEEvPNS_8RankDataENS_11Rank    775    12670.5       16.3   9.3%
+  hgemm_bf16_32x64x256x3_SPK1_W2x1x2_BLDS1_TN_AS1_0                                   390     6476.3       16.6   4.8%
+  hgemm_bf16_32x64x64x7_SPK3_W1x2x1_BLDS1_TN_AS1_0                                    390     6085.7       15.6   4.5%
+  _batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant_kernel_    390     4477.6       11.5   3.3%
+  hgemm_bf16_16x64x128x4_SPK1_W1x1x2_BLDS1_TN_AS1_0                                   495     4167.5        8.4   3.1%
+  _ZN5aiter25local_device_load_rmsnormIDF16bLi512ELi2ELb0EEEvNS_11RankSignalsEPT_S    775     3448.9        4.5   2.5%
+  _ZN5aiter30fused_mx_quant_moe_sort_kernelIDF16bN4opus5fp4_tELi256ELi32EEEvPT0_Ph    375     2978.5        7.9   2.2%
+  _batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant_kernel_    390     2851.6        7.3   2.1%
+  hgemm_bf16_32x64x128x5_SPK8_W1x4x1_BLDS1_TN_AS1_0                                   375     2373.8        6.3   1.7%
+  _ZN5aiter30fused_mx_quant_moe_sort_kernelIDF16bN4opus5fp4_tELi64ELi8EEEvPT0_PhPK    375     2338.4        6.2   1.7%
+  void aiter::grouped_topk_kernel<c10::BFloat16, float __vector(4), 1, true, true,    375     1918.8        5.1   1.4%
+  void aiter::opus_moe_sorting_entry<aiter::MoeSortingMultiPhaseKernel_P23<aiter::    375     1697.2        4.5   1.2%
+  _fused_qk_rope_cat_and_cache_mla_kernel                                             390     1669.4        4.3   1.2%
+  _ZN5aiter23fused_qk_rmsnorm_kernelIDF16bLi256ELi8ELb1ELi1EEEvPT_S2_PKS1_S4_S4_S4    390     1619.2        4.2   1.2%
+  void aiter::opus_moe_sorting_entry<aiter::MoeSortingMultiPhaseKernel_P0_v2<aiter    375     1603.1        4.3   1.2%
+  Cijk_Alik_Bljk_BBS_BH_Bias_HA_S_SAV_UserArgs_MT16x16x1024_MI16x16x1_SN_LDSB1_AFC    105     1168.7       11.1   0.9%
+  void aiter::kn_entry_2c_sbhd_cached_indirect_inplace<aiter::OpCachedFwd, 1, true    105     1025.8        9.8   0.8%
+  void fast_hadamard_transform_kernel<fast_hadamard_transform_kernel_traits<16, 7,    210      886.5        4.2   0.7%
+  hgemm_bf16_32x64x128x3_SPK12_W1x2x2_BLDS1_TN_AS1_0                                  105      630.1        6.0   0.5%
+  _gluon_deepgemm_fp8_paged_mqa_logits_preshuffle                                     105      554.7        5.3   0.4%
+  Cijk_Alik_Bljk_BBS_BH_Bias_HA_S_SAV_UserArgs_MT224x64x128_MI16x16x1_SN_LDSB1_AFC      5      526.8      105.4   0.4%
+  act_quant_kernel__kernel                                                            105      520.3        5.0   0.4%
+  triton_poi_fused_mul_unsqueeze_0                                                    105      486.9        4.6   0.4%
+  _ZN5aiter13allgather_vecIDF16bLi4EEEvPNS_8RankDataENS_11RankSignalsEPNS_6SignalE      5      485.1       97.0   0.4%
+  _ZN5aiter32indexer_k_quant_and_cache_kernelIDF16bDB8_LN4vllm18Fp8KVCacheDataType    105      473.5        4.5   0.3%
+  _ZN7ck_tile6kentryILi1ENS_14Layernorm2dFwdINS_29Layernorm2dFwdPipelineOnePassINS    105      472.5        4.5   0.3%
+  (anonymous namespace)::topk_transform_decode_kernel((anonymous namespace)::FastT    105      470.1        4.5   0.3%
+  void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, lo     10      453.4       45.3   0.3%
+  hgemm_bf16_64x64x128x4_SPK2_W2x2x2_BLDS1_TN_AS1_0                                    15      357.5       23.8   0.3%
+  hgemm_bf16_32x64x256x3_SPK1_W1x2x2_BLDS1_TN_AS1_0                                    15      202.7       13.5   0.1%
+  void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<a      5      179.5       35.9   0.1%
+  _ZN5aiter26cross_device_reduce_2stageIDF16bLi4ELb0EEEvPNS_8RankDataES2_NS_11Rank     10      159.4       15.9   0.1%
+  void at::native::elementwise_kernel_manual_unroll<128, 8, at::native::gpu_kernel      5       86.7       17.3   0.1%
+  _ZN7sgl_hip10activation18act_and_mul_kernelI14__hip_bfloat16TnPFT_RKS3_EXadL_Z4s     15       64.8        4.3   0.0%
+  void aiter::greedy_sample_kernel<float, 1024, 16>(float const*, int*, int, int)       5       63.4       12.7   0.0%
+  void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel     10       58.0        5.8   0.0%
+  void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16tofloat32_      5       48.9        9.8   0.0%
+  void rocprim::ROCPRIM_400200_NS::detail::trampoline_kernel<rocprim::ROCPRIM_4002     10       44.4        4.4   0.0%
+  void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<a     10       41.7        4.2   0.0%
+  void at::native::elementwise_kernel_manual_unroll<128, 8, at::native::gpu_kernel      5       27.5        5.5   0.0%
+  void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<a      5       24.9        5.0   0.0%
+  void at::native::vectorized_elementwise_kernel<4, at::native::BUnaryFunctor<int,      5       23.6        4.7   0.0%
+  _ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi256ELi24ELb1ELb0ELb1ELi1EEEvPT0_      5       22.9        4.6   0.0%
+  void at::native::elementwise_kernel_manual_unroll<128, 4, at::native::gpu_kernel      5       22.6        4.5   0.0%
+  _ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi256ELi24ELb0ELb0ELb1ELi1EEEvPT0_      5       22.4        4.5   0.0%
+  void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arang      5       21.8        4.4   0.0%
+  void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>      5       21.7        4.3   0.0%
+  void at::native::(anonymous namespace)::multi_tensor_apply_kernel<at::native::(a      5       21.3        4.3   0.0%
+  void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespa      5       21.3        4.3   0.0%
+  triton_poi_fused_add_bitwise_and_bitwise_not_bitwise_or_ge_lt_mul_sub_0               5       20.5        4.1   0.0%
+  void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctorOnSelf_      5       19.8        4.0   0.0%
+========================================================================================================================
+
+
+====================================================================================================
+ Step 2: Layer Structure (cuda-graph-OFF)
+ Model Layer: DeepseekV2DecoderLayer
+ Layers per forward pass: 78
+ Distinct layer types: 3
+====================================================================================================
+
+  Type A: 1 layers
+  Layers: DeepseekV2DecoderLayer_0
+  Sub-modules: RMSNorm + DeepseekV2AttentionMLA + DeepseekV2MLP
+
+  Type B: 2 layers
+  Layers: DeepseekV2DecoderLayer_1, DeepseekV2DecoderLayer_2
+  Sub-modules: DeepseekV2AttentionMLA + DeepseekV2MLP
+
+  Type C: 75 layers
+  Layers: DeepseekV2DecoderLayer_3 .. DeepseekV2DecoderLayer_77
+  Sub-modules: DeepseekV2AttentionMLA + DeepseekV2MoE
+
+====================================================================================================
+
+
+====================================================================================================
+ Step 3: Layer Kernel Breakdown
+====================================================================================================
+
+  Type A (1 layers): RMSNorm + DeepseekV2AttentionMLA + DeepseekV2MLP
+  ------------------------------------------------------------------------------------------
+    #  Detail                                      Duration  Kernel Name  (graph-ON avg)
+  ---  ----------------------------------------  ----------  --------------------------------------------------
+  ---- prepare_attn_and_capture_last_layer_outputs ----
+    0  RMSNorm                                       4.6 us  _ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi256ELi24ELb0          4.5 us
+                                                             caller: python/sglang/srt/layers/layernorm.py(349): forward_aiter
+                                       Subtotal      4.6 us
+
+  ---- DeepseekV2AttentionMLA ----
+    1  ReplicatedLinear                             16.6 us  hgemm_bf16_32x64x64x7_SPK3_W1x2x1_BLDS1_TN_AS1_0         15.6 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    2  core.py(1504)                                 4.4 us  _ZN5aiter23fused_qk_rmsnorm_kernelIDF16bLi256ELi8ELb1ELi1EEE          4.2 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(129): fused_qk_rmsnorm_bf16
+    3  ColumnParallelLinear                          8.6 us  hgemm_bf16_16x64x128x4_SPK1_W1x1x2_BLDS1_TN_AS1_0          8.4 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    4  Indexer > ReplicatedLinear                    9.7 us  hgemm_bf16_16x64x128x4_SPK1_W1x1x2_BLDS1_TN_AS1_0          8.4 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    5  Indexer > ReplicatedLinear                    6.2 us  hgemm_bf16_32x64x128x3_SPK12_W1x2x2_BLDS1_TN_AS1_0          6.0 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    6  Indexer > LayerNorm                           3.6 us  _ZN7ck_tile6kentryILi1ENS_14Layernorm2dFwdINS_29Layernorm2dF          4.5 us
+                                                             caller: python/sglang/srt/layers/layernorm.py(641): forward_hip
+    7  Indexer > RotaryEmbedding                    10.2 us  void aiter::kn_entry_2c_sbhd_cached_indirect_inplace<aiter::          9.8 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(545): _get_q_k_bf16
+    8  Indexer                                       4.3 us  void fast_hadamard_transform_kernel<fast_hadamard_transform_          4.2 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(329): rotate_activation
+    9  Indexer                                       3.5 us  void fast_hadamard_transform_kernel<fast_hadamard_transform_          4.2 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(329): rotate_activation
+   10  Indexer                                       6.6 us  act_quant_kernel__kernel          5.0 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/tilelang_kernel.py(142): act_quant
+   11  Indexer                                       4.3 us  _ZN5aiter32indexer_k_quant_and_cache_kernelIDF16bDB8_LN4vllm          4.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(1609): _store_index_k_cache
+   12  Indexer                                       9.4 us  Cijk_Alik_Bljk_BBS_BH_Bias_HA_S_SAV_UserArgs_MT16x16x1024_MI         11.1 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(507): _get_logits_head_gate
+   13  Indexer                                       2.7 us  triton_poi_fused_mul_unsqueeze_0          4.6 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(507): _get_logits_head_gate
+   14  Indexer                                       6.3 us  _gluon_deepgemm_fp8_paged_mqa_logits_preshuffle          5.3 us
+                                                             caller: python/sglang/jit_kernel/dsa/paged_mqa_logits.py(63): aiter_paged_mqa_logits
+   15  Indexer                                       4.0 us  (anonymous namespace)::topk_transform_decode_kernel((anonymo          4.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_topk_backend.py(75): topk_transform
+   16  batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant.py(13)      8.9 us  _batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_          7.3 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(259): forward_absorb_prepare
+   17  fused_kv_cache.py(88)                         5.4 us  _fused_qk_rope_cat_and_cache_mla_kernel          4.3 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(604): forward_absorb_core
+   18  RadixAttention                               32.1 us  main_kernel         17.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/tilelang_kernel.py(1317): tilelang_sparse_fwd
+   19  RadixAttention                                5.4 us  main_kernel         17.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/tilelang_kernel.py(1317): tilelang_sparse_fwd
+   20  batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant.py(13)     13.0 us  _batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_         11.5 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(604): forward_absorb_core
+   21  RowParallelLinear                            17.9 us  hgemm_bf16_32x64x256x3_SPK1_W2x1x2_BLDS1_TN_AS1_0         16.6 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+                                       Subtotal    183.3 us
+
+  ---- prepare_mlp ----
+   22  core.py(1504)                               1.348 ms  _ZN5aiter33reduce_scatter_cross_device_storeIDF16bLi4EEEvPNS         16.3 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+   23  core.py(1504)                                 4.7 us  _ZN5aiter25local_device_load_rmsnormIDF16bLi512ELi2ELb0EEEvN          4.5 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+                                       Subtotal    1.353 ms
+
+  ---- DeepseekV2MLP ----
+   24  MergedColumnParallelLinear                   24.2 us  hgemm_bf16_64x64x128x4_SPK2_W2x2x2_BLDS1_TN_AS1_0         23.8 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+   25  SiluAndMul                                    4.5 us  _ZN7sgl_hip10activation18act_and_mul_kernelI14__hip_bfloat16          4.3 us
+                                                             caller: python/sglang/srt/layers/activation.py(102): forward_cuda
+   26  RowParallelLinear                            13.9 us  hgemm_bf16_32x64x256x3_SPK1_W1x2x2_BLDS1_TN_AS1_0         13.5 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+                                       Subtotal     42.6 us
+
+                                          TOTAL    1.583 ms  (27 kernels)
+
+  Type B (2 layers): DeepseekV2AttentionMLA + DeepseekV2MLP
+  ------------------------------------------------------------------------------------------
+    #  Detail                                      Duration  Kernel Name  (graph-ON avg)
+  ---  ----------------------------------------  ----------  --------------------------------------------------
+  ---- prepare_attn_and_capture_last_layer_outputs ----
+    0  core.py(1504)                               395.4 us  _ZN5aiter33reduce_scatter_cross_device_storeIDF16bLi4EEEvPNS         16.3 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+    1  core.py(1504)                                 4.4 us  _ZN5aiter25local_device_load_rmsnormIDF16bLi512ELi2ELb0EEEvN          4.5 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+                                       Subtotal    399.9 us
+
+  ---- DeepseekV2AttentionMLA ----
+    2  ReplicatedLinear                             15.8 us  hgemm_bf16_32x64x64x7_SPK3_W1x2x1_BLDS1_TN_AS1_0         15.6 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    3  core.py(1504)                                 4.2 us  _ZN5aiter23fused_qk_rmsnorm_kernelIDF16bLi256ELi8ELb1ELi1EEE          4.2 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(129): fused_qk_rmsnorm_bf16
+    4  ColumnParallelLinear                          8.6 us  hgemm_bf16_16x64x128x4_SPK1_W1x1x2_BLDS1_TN_AS1_0          8.4 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    5  Indexer > ReplicatedLinear                    7.9 us  hgemm_bf16_16x64x128x4_SPK1_W1x1x2_BLDS1_TN_AS1_0          8.4 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    6  Indexer > ReplicatedLinear                    5.4 us  hgemm_bf16_32x64x128x3_SPK12_W1x2x2_BLDS1_TN_AS1_0          6.0 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    7  Indexer > LayerNorm                           4.4 us  _ZN7ck_tile6kentryILi1ENS_14Layernorm2dFwdINS_29Layernorm2dF          4.5 us
+                                                             caller: python/sglang/srt/layers/layernorm.py(641): forward_hip
+    8  Indexer > RotaryEmbedding                     9.3 us  void aiter::kn_entry_2c_sbhd_cached_indirect_inplace<aiter::          9.8 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(545): _get_q_k_bf16
+    9  Indexer                                       4.1 us  void fast_hadamard_transform_kernel<fast_hadamard_transform_          4.2 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(329): rotate_activation
+   10  Indexer                                       4.3 us  void fast_hadamard_transform_kernel<fast_hadamard_transform_          4.2 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(329): rotate_activation
+   11  Indexer                                       5.0 us  act_quant_kernel__kernel          5.0 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/tilelang_kernel.py(142): act_quant
+   12  Indexer                                       3.5 us  _ZN5aiter32indexer_k_quant_and_cache_kernelIDF16bDB8_LN4vllm          4.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(1609): _store_index_k_cache
+   13  Indexer                                      10.7 us  Cijk_Alik_Bljk_BBS_BH_Bias_HA_S_SAV_UserArgs_MT16x16x1024_MI         11.1 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(507): _get_logits_head_gate
+   14  Indexer                                       3.8 us  triton_poi_fused_mul_unsqueeze_0          4.6 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_indexer.py(507): _get_logits_head_gate
+   15  Indexer                                       6.4 us  _gluon_deepgemm_fp8_paged_mqa_logits_preshuffle          5.3 us
+                                                             caller: python/sglang/jit_kernel/dsa/paged_mqa_logits.py(63): aiter_paged_mqa_logits
+   16  Indexer                                       3.5 us  (anonymous namespace)::topk_transform_decode_kernel((anonymo          4.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/dsa_topk_backend.py(75): topk_transform
+   17  batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant.py(13)      9.0 us  _batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_          7.3 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(259): forward_absorb_prepare
+   18  fused_kv_cache.py(88)                         5.0 us  _fused_qk_rope_cat_and_cache_mla_kernel          4.3 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(604): forward_absorb_core
+   19  RadixAttention                               31.9 us  main_kernel         17.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/tilelang_kernel.py(1317): tilelang_sparse_fwd
+   20  RadixAttention                                5.4 us  main_kernel         17.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/tilelang_kernel.py(1317): tilelang_sparse_fwd
+   21  batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant.py(13)     11.8 us  _batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_         11.5 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(604): forward_absorb_core
+   22  RowParallelLinear                            17.5 us  hgemm_bf16_32x64x256x3_SPK1_W2x1x2_BLDS1_TN_AS1_0         16.6 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+                                       Subtotal    177.3 us
+
+  ---- prepare_mlp ----
+   23  core.py(1504)                               594.0 us  _ZN5aiter33reduce_scatter_cross_device_storeIDF16bLi4EEEvPNS         16.3 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+   24  core.py(1504)                                 4.3 us  _ZN5aiter25local_device_load_rmsnormIDF16bLi512ELi2ELb0EEEvN          4.5 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+                                       Subtotal    598.3 us
+
+  ---- DeepseekV2MLP ----
+   25  MergedColumnParallelLinear                   23.6 us  hgemm_bf16_64x64x128x4_SPK2_W2x2x2_BLDS1_TN_AS1_0         23.8 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+[INFO] Step 3 written to: Analysis/MI355X/step3_layer_breakdown.xlsx (76 kernels, 76 matched to graph-ON)
+   26  SiluAndMul                                    4.3 us  _ZN7sgl_hip10activation18act_and_mul_kernelI14__hip_bfloat16          4.3 us
+                                                             caller: python/sglang/srt/layers/activation.py(102): forward_cuda
+   27  RowParallelLinear                            13.3 us  hgemm_bf16_32x64x256x3_SPK1_W1x2x2_BLDS1_TN_AS1_0         13.5 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+                                       Subtotal     41.2 us
+
+                                          TOTAL    1.217 ms  (28 kernels)
+
+  Type C (75 layers): DeepseekV2AttentionMLA + DeepseekV2MoE
+  ------------------------------------------------------------------------------------------
+    #  Detail                                      Duration  Kernel Name  (graph-ON avg)
+  ---  ----------------------------------------  ----------  --------------------------------------------------
+  ---- prepare_attn_and_capture_last_layer_outputs ----
+    0  core.py(1504)                               195.3 us  _ZN5aiter33reduce_scatter_cross_device_storeIDF16bLi4EEEvPNS         16.3 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+    1  core.py(1504)                                 4.6 us  _ZN5aiter25local_device_load_rmsnormIDF16bLi512ELi2ELb0EEEvN          4.5 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+                                       Subtotal    199.9 us
+
+  ---- DeepseekV2AttentionMLA ----
+    2  ReplicatedLinear                             15.6 us  hgemm_bf16_32x64x64x7_SPK3_W1x2x1_BLDS1_TN_AS1_0         15.6 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    3  core.py(1504)                                 4.3 us  _ZN5aiter23fused_qk_rmsnorm_kernelIDF16bLi256ELi8ELb1ELi1EEE          4.2 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(129): fused_qk_rmsnorm_bf16
+    4  ColumnParallelLinear                          8.6 us  hgemm_bf16_16x64x128x4_SPK1_W1x1x2_BLDS1_TN_AS1_0          8.4 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+    5  batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant.py(13)      7.3 us  _batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_          7.3 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(259): forward_absorb_prepare
+    6  fused_kv_cache.py(88)                         4.2 us  _fused_qk_rope_cat_and_cache_mla_kernel          4.3 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(604): forward_absorb_core
+    7  RadixAttention                               30.7 us  main_kernel         17.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/tilelang_kernel.py(1317): tilelang_sparse_fwd
+    8  RadixAttention                                4.0 us  main_kernel         17.5 us
+                                                             caller: python/sglang/srt/layers/attention/dsa/tilelang_kernel.py(1317): tilelang_sparse_fwd
+    9  batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant.py(13)     12.3 us  _batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_         11.5 us
+                                                             caller: python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py(604): forward_absorb_core
+   10  RowParallelLinear                            17.6 us  hgemm_bf16_32x64x256x3_SPK1_W2x1x2_BLDS1_TN_AS1_0         16.6 us
+                                                             caller: python/sglang/srt/layers/quantization/unquant.py(181): apply
+                                       Subtotal    104.7 us
+
+  ---- prepare_mlp ----
+   11  core.py(1504)                               560.3 us  _ZN5aiter33reduce_scatter_cross_device_storeIDF16bLi4EEEvPNS         16.3 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+   12  core.py(1504)                                 4.4 us  _ZN5aiter25local_device_load_rmsnormIDF16bLi512ELi2ELb0EEEvN          4.5 us
+                                                             caller: python/sglang/srt/distributed/parallel_state.py(685): fused_allreduce_rmsnorm
+                                       Subtotal    564.6 us
+
+  ---- DeepseekV2MoE ----
+   13  MoEGate                                       6.6 us  hgemm_bf16_32x64x128x5_SPK8_W1x4x1_BLDS1_TN_AS1_0          6.3 us
+                                                             caller: python/sglang/srt/layers/rocm_linear_utils.py(9): aiter_dsv3_router_gemm
+   14  TopK                                          5.0 us  void aiter::grouped_topk_kernel<c10::BFloat16, float __vecto          5.1 us
+                                                             caller: python/sglang/srt/layers/moe/topk.py(1416): biased_grouped_topk_gpu
+   15  FusedMoE                                      4.1 us  void aiter::opus_moe_sorting_entry<aiter::MoeSortingMultiPha          4.3 us
+                                                             caller: python/sglang/srt/layers/moe/moe_runner/aiter.py(123): run
+   16  (self)                                        4.5 us  void aiter::opus_moe_sorting_entry<aiter::MoeSortingMultiPha          4.5 us
+                                                             caller: python/sglang/srt/layers/moe/moe_runner/aiter.py(123): run
+   17  FusedMoE                                      7.2 us  _ZN5aiter30fused_mx_quant_moe_sort_kernelIDF16bN4opus5fp4_tE          7.9 us
+                                                             caller: python/sglang/srt/layers/moe/moe_runner/aiter.py(123): run
+   18  FusedMoE                                     28.1 us  mfma_moe1_silu_mul_afp4_wfp4_bf16_t32x128x256_pm1_async_v32         97.0 us
+                                                             caller: python/sglang/srt/layers/moe/moe_runner/aiter.py(123): run
+   19  FusedMoE                                      6.8 us  _ZN5aiter30fused_mx_quant_moe_sort_kernelIDF16bN4opus5fp4_tE          6.2 us
+                                                             caller: python/sglang/srt/layers/moe/moe_runner/aiter.py(123): run
+   20  (self)                                       17.4 us  mfma_moe2_afp4_wfp4_bf16_cshuffle_t32x128x256_vscale_fix3_fp         53.3 us
+                                                             caller: python/sglang/srt/layers/moe/moe_runner/aiter.py(123): run
+                                       Subtotal     79.9 us
+
+                                          TOTAL    949.2 us  (21 kernels)
+
+====================================================================================================
+

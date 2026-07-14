@@ -1,0 +1,436 @@
+============================================================
+RUNNER ENV (sanity check before kicking off the 6 runs)
+============================================================
+whoami: cannot find name for user ID 10055
+  USER  =   (uid=10055)
+  HOME  = /home/jacchang
+  CWD   = /home/jacchang/SGLang-benchmarks
+  python= /opt/venv/bin/python3
+  sglang  = /sgl-workspace/sglang/python/sglang/__init__.py
+
+============================================================
+CASCADE 6-RUN START @ 2026-05-11 10:06:56
+============================================================
+
+============================================================
+RUN 1/6: cache_mode=L1 tag=MI355X_15rounds extra='' @ 2026-05-11 10:06:56
+============================================================
++ ulimit -n 65535
++ sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'
+sh: 1: cannot create /proc/sys/kernel/numa_balancing: Read-only file system
++ true
++ MODEL_PATH=/data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528
++ TAG=
++ DOCKER=untagged-docker
++ TP_SIZE=8
++ HOST=localhost
++ PORT=30000
++ CACHE_MODE=L3_file
++ HICACHE_SIZE=auto
++ HOST_HEADROOM_GB=200
++ NUM_CLIENTS=300
++ NUM_ROUNDS=15
++ REQUEST_LENGTH=4096
++ OUTPUT_LENGTH=1
++ MAX_PARALLEL=8
++ REQUEST_RATE=32
++ CUDA_GRAPH_MAX_BS=0
++ CHUNKED_PREFILL_SIZE=65536
++ MAX_PREFILL_TOKENS=65536
++ WAIT_FOR_SERVER_SEC=900
++ GSM8K_PRECHECK=false
++ GSM8K_NUM_QUESTIONS=200
++ GSM8K_PARALLEL=8
++ [[ 7 -gt 0 ]]
++ case $1 in
++ TAG=MI355X_15rounds
++ shift 2
++ [[ 5 -gt 0 ]]
++ case $1 in
++ CACHE_MODE=L1
++ shift 2
++ [[ 3 -gt 0 ]]
++ case $1 in
++ GSM8K_PRECHECK=true
++ shift 1
++ [[ 2 -gt 0 ]]
++ case $1 in
++ DOCKER=rocm/sgl-dev:v0.5.11-rocm720-mi35x-20260507
++ shift 2
++ [[ 0 -gt 0 ]]
++ '[' -z MI355X_15rounds ']'
++ '[' '!' -d /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 ']'
++ case "$CACHE_MODE" in
+++ basename /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528
++ MODEL_NAME=DeepSeek-R1-0528
++ '[' L1 = L1 ']'
++ HICACHE_SIZE=0
++ echo '>>> CACHE_MODE=L1: skipping host pool sizing (GPU radix cache only)'
+>>> CACHE_MODE=L1: skipping host pool sizing (GPU radix cache only)
+++ echo rocm/sgl-dev:v0.5.11-rocm720-mi35x-20260507
+++ sed 's/\//_/g; s/:/-/g'
++ DOCKER_FILENAME=rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507
++ BASE_LOG_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds
++ '[' L1 = L1 ']'
++ LOG_DIR=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds/L1
++ mkdir -p /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds/L1
++ echo '>>> bench folder: /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds/L1'
+>>> bench folder: /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds/L1
+++ get_gpu_hbm_gb
+++ command -v rocm-smi
+++ rocm-smi --showmeminfo vram
+++ awk '/VRAM Total Memory/ {print int($NF/1024/1024/1024); exit}'
++ HBM_GB=287
++ echo '>>> detected HBM: 287 GB per GPU, TP=8'
+>>> detected HBM: 287 GB per GPU, TP=8
+++ ls -d /sys/devices/system/node/node0 /sys/devices/system/node/node1
+++ sed 's|.*/node||'
+++ sort -n
+++ paste -sd,
++ NUMA_NODES=0,1
++ NUMACTL_PREFIX=()
++ command -v numactl
++ [[ 0,1 == *,* ]]
++ NUMACTL_PREFIX=(numactl --interleave="$NUMA_NODES")
++ echo '>>> NUMA interleave: --interleave=0,1'
+>>> NUMA interleave: --interleave=0,1
++ tee /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds/L1/host_info.log
+++ date '+%F %T %Z'
++ echo '=== cascade_dsr1.sh host snapshot @ 2026-05-11 10:06:56 UTC ==='
++ echo '--- lscpu ---'
++ lscpu
++ grep -E 'Architecture|Vendor|Model name|CPU\(s\)|Socket|Core|Thread|NUMA'
++ echo '--- /proc/meminfo ---'
++ grep -E '^MemTotal:|^MemAvailable:|^MemFree:|^Cached:' /proc/meminfo
++ echo '--- NUMA per-node DRAM ---'
++ for n in /sys/devices/system/node/node[0-9]*
++ '[' -d /sys/devices/system/node/node0 ']'
+++ basename /sys/devices/system/node/node0
+++ sed s/node//
++ nid=0
+++ awk '/MemTotal/{print int($4/1024/1024)" GB"}' /sys/devices/system/node/node0/meminfo
++ mem='1511 GB'
+++ cat /sys/devices/system/node/node0/cpulist
++ cpus=0-63,128-191
++ printf '  node %s: DRAM=%s, CPUs=%s\n' 0 '1511 GB' 0-63,128-191
++ for n in /sys/devices/system/node/node[0-9]*
++ '[' -d /sys/devices/system/node/node1 ']'
+++ basename /sys/devices/system/node/node1
+++ sed s/node//
++ nid=1
+++ awk '/MemTotal/{print int($4/1024/1024)" GB"}' /sys/devices/system/node/node1/meminfo
++ mem='1511 GB'
+++ cat /sys/devices/system/node/node1/cpulist
++ cpus=64-127,192-255
++ printf '  node %s: DRAM=%s, CPUs=%s\n' 1 '1511 GB' 64-127,192-255
++ echo '--- GPU info ---'
++ command -v rocm-smi
++ rocm-smi --showid
++ grep 'Device Name'
++ head -1
++ '[' L1 = L1 ']'
++ META_HICACHE_VAL=None
++ '[' true = true ']'
++ META_GSM8K_ENABLED=True
++ META_GSM8K_NQ=200
++ python3 - /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds/L1/bench_meta.json
++ HICACHE_FILE_STORE_DIR=
++ [[ L1 == L3_* ]]
++ trap 'rm -rf "${HICACHE_FILE_STORE_DIR:-}" 2>/dev/null; pkill -9 -f sglang.launch_server 2>/dev/null || true' EXIT
++ SERVER_LOG=/home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds/L1/server.log
++ '[' 0 -le 0 ']'
++ CUDA_GRAPH_MAX_BS=8
++ echo '>>> cuda-graph-max-bs=8 (coupled to max-parallel)'
+>>> cuda-graph-max-bs=8 (coupled to max-parallel)
++ echo '>>> chunked-prefill-size=65536, max-prefill-tokens=65536'
+>>> chunked-prefill-size=65536, max-prefill-tokens=65536
++ SERVER_CMD=("${NUMACTL_PREFIX[@]}" python3 -m sglang.launch_server --model-path "$MODEL_PATH" --tp "$TP_SIZE" --host "$HOST" --port "$PORT" --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size "$CHUNKED_PREFILL_SIZE" --max-prefill-tokens "$MAX_PREFILL_TOKENS" --cuda-graph-max-bs "$CUDA_GRAPH_MAX_BS")
++ case "$CACHE_MODE" in
++ :
++ is_rocm
++ '[' -e /dev/kfd ']'
++ export ROCM_QUICK_REDUCE_QUANTIZATION=INT4 SAFETENSORS_FAST_GPU=1
++ ROCM_QUICK_REDUCE_QUANTIZATION=INT4
++ SAFETENSORS_FAST_GPU=1
++ SERVER_CMD+=(--attention-backend aiter)
++ echo '>>> launching SGLang (cache_mode=L1, hicache-size=0 GB)'
+>>> launching SGLang (cache_mode=L1, hicache-size=0 GB)
++ echo 'numactl --interleave=0,1 python3 -m sglang.launch_server --model-path /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 --tp 8 --host localhost --port 30000 --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 65536 --max-prefill-tokens 65536 --cuda-graph-max-bs 8 --attention-backend aiter'
++ tee /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds/L1/server.log
+numactl --interleave=0,1 python3 -m sglang.launch_server --model-path /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 --tp 8 --host localhost --port 30000 --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 65536 --max-prefill-tokens 65536 --cuda-graph-max-bs 8 --attention-backend aiter
++ numactl --interleave=0,1 python3 -m sglang.launch_server --model-path /data/huggingface/hub/deepseek-ai/DeepSeek-R1-0528 --tp 8 --host localhost --port 30000 --mem-fraction-static 0.85 --watchdog-timeout 1200 --enable-metrics --enable-cache-report --trust-remote-code --reasoning-parser deepseek-r1 --kv-cache-dtype fp8_e4m3 --page-size 64 --context-length 65536 --chunked-prefill-size 65536 --max-prefill-tokens 65536 --cuda-graph-max-bs 8 --attention-backend aiter
++ tee -a /home/jacchang/SGLang-benchmarks/results/rocm_sgl-dev-v0.5.11-rocm720-mi35x-20260507/DeepSeek-R1-0528-cascade-MI355X_15rounds/L1/server.log
+++ date +%s
++ deadline=1778494916
++ echo '>>> waiting up to 900s for /health 200...'
+>>> waiting up to 900s for /health 200...
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494016 -ge 1778494916 ']'
++ sleep 5
+/sgl-workspace/sglang/python/sglang/launch_server.py:54: UserWarning: 'python -m sglang.launch_server' is still supported, but 'sglang serve' is the recommended entrypoint.
+  Example: sglang serve --model-path <model> [options]
+  warnings.warn(
+[aiter] ROCm/HIP JIT runtime not available: [Errno 13] Permission denied: '/home/jacchang/.aiter/jit'. CK and HIP ops are disabled. Triton ops remain available.
+Traceback (most recent call last):
+  File "/sgl-workspace/sglang/python/sglang/srt/layers/quantization/fp8_kernel.py", line 81, in <module>
+    from aiter import (  # v0.1.3
+ImportError: cannot import name 'dynamic_per_tensor_quant' from 'aiter' (/sgl-workspace/aiter/aiter/__init__.py)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/usr/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/sgl-workspace/sglang/python/sglang/launch_server.py", line 66, in <module>
+    server_args = prepare_server_args(sys.argv[1:])
+  File "/sgl-workspace/sglang/python/sglang/srt/server_args.py", line 7310, in prepare_server_args
+    return ServerArgs.from_cli_args(raw_args)
+  File "/sgl-workspace/sglang/python/sglang/srt/server_args.py", line 6674, in from_cli_args
+    return cls(**{attr: getattr(args, attr) for attr in attrs})
+  File "<string>", line 373, in __init__
+  File "/sgl-workspace/sglang/python/sglang/srt/server_args.py", line 840, in __post_init__
+    self._handle_piecewise_cuda_graph()
+  File "/sgl-workspace/sglang/python/sglang/srt/server_args.py", line 1206, in _handle_piecewise_cuda_graph
+    if self.get_model_config().is_piecewise_cuda_graph_disabled_model:
+  File "/sgl-workspace/sglang/python/sglang/srt/server_args.py", line 6720, in get_model_config
+    from sglang.srt.configs.model_config import ModelConfig
+  File "/sgl-workspace/sglang/python/sglang/srt/configs/model_config.py", line 27, in <module>
+    from sglang.srt.layers.quantization import QUANTIZATION_METHODS
+  File "/sgl-workspace/sglang/python/sglang/srt/layers/quantization/__init__.py", line 19, in <module>
+    from sglang.srt.layers.quantization.auto_round import AutoRoundConfig
+  File "/sgl-workspace/sglang/python/sglang/srt/layers/quantization/auto_round.py", line 12, in <module>
+    from sglang.srt.layers.quantization.utils import get_scalar_types
+  File "/sgl-workspace/sglang/python/sglang/srt/layers/quantization/utils.py", line 13, in <module>
+    from sglang.srt.layers.quantization.fp8_kernel import scaled_fp8_quant
+  File "/sgl-workspace/sglang/python/sglang/srt/layers/quantization/fp8_kernel.py", line 87, in <module>
+    raise ImportError("aiter is required when SGLANG_USE_AITER is set to True")
+ImportError: aiter is required when SGLANG_USE_AITER is set to True
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494021 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494026 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494031 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494036 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494041 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494046 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494051 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494056 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494061 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494066 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494071 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494077 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494082 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494087 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494092 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494097 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494102 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494107 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494112 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494117 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494122 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494127 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494132 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494137 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494142 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494147 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494152 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494157 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494162 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494167 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494172 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494177 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494182 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494187 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494192 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494197 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494202 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494207 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494212 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494217 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494222 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494227 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494232 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494237 -ge 1778494916 ']'
++ sleep 5
+++ curl -s -o /dev/null -w '%{http_code}' http://localhost:30000/health
++ '[' 000 '!=' 200 ']'
+++ date +%s
++ '[' 1778494242 -ge 1778494916 ']'
++ sleep 5
