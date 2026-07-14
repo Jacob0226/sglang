@@ -1119,6 +1119,7 @@ def sparse_mla_fwd_decode_partial_fp8(
     idx_shape = [batch, seq_len, kv_group, topk]
     partial_o_shape = [batch, seq_len, n_groups, num_heads, d_v]
     partial_lse_shape = [batch, seq_len, n_groups, num_heads]
+    topk_length_shape = [batch, seq_len]
 
     accum_dtype = T.float32
     dtype_bf16 = T.bfloat16
@@ -1128,6 +1129,7 @@ def sparse_mla_fwd_decode_partial_fp8(
         q_fp8: T.Tensor(q_fp8_shape, fp8_dtype),
         kv_fp8: T.Tensor(kv_fp8_shape, fp8_dtype),
         indices: T.Tensor(idx_shape, T.int32),
+        topk_length: T.Tensor(topk_length_shape, T.int32),
         partial_o: T.Tensor(partial_o_shape, dtype_bf16),
         partial_lse: T.Tensor(partial_lse_shape, accum_dtype),
     ):
@@ -1186,7 +1188,17 @@ def sparse_mla_fwd_decode_partial_fp8(
             T.copy(q_fp8[b_i, s_i, H0:H1, 2 * group_size : 3 * group_size], q_tile2)
             T.copy(q_fp8[b_i, s_i, H0:H1, 3 * group_size : 4 * group_size], q_tile3)
 
-            for k_i in T.serial(inner_iter):
+            # Early-exit padded groups: GLM-5.2 uses a fixed topk=2048 index row,
+            # but when the live context is shorter the tail slots are -1 padding.
+            # `topk_length` is the per-token count of valid slots; groups entirely
+            # beyond it do 0 iterations (skipping the QK/PV MFMA). Their partial_o
+            # stays 0 and partial_lse stays -2**30, so the combine kernel merges
+            # them as a zero contribution (no combine-side change needed).
+            tk_len = topk_length[b_i, s_i]
+            actual_n_groups = T.ceildiv(tk_len, BI * inner_iter)
+            do_iters = T.if_then_else(group_i < actual_n_groups, inner_iter, 0)
+
+            for k_i in T.serial(do_iters):
                 topk_block_i = group_i * inner_iter + k_i
 
                 for bi_i in T.Parallel(BI):
@@ -1320,6 +1332,7 @@ def tilelang_sparse_fwd(
     indices: torch.Tensor,
     sm_scale: float,
     d_v: int = 512,
+    topk_length: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     assert q.dim() == 3 and kv.dim() == 3 and indices.dim() == 3
     num_heads = q.shape[1]
@@ -1327,6 +1340,12 @@ def tilelang_sparse_fwd(
     tail_dim = dim - d_v
     topk = indices.shape[-1]
     assert topk == 2048
+
+    # Per-token count of valid (non-padding) topk slots. When None, use an
+    # INT_MAX sentinel so every group runs (== original full-topk behavior).
+    # The fp8 decode partial kernel uses this to skip padded groups.
+    if topk_length is None:
+        topk_length = _topk_length_sentinel(q.device, q.shape[0])
 
     if _is_hip:
         is_fp8_kv = kv.dtype in (torch.float8_e4m3fn, torch.float8_e4m3fnuz)
@@ -1366,9 +1385,17 @@ def tilelang_sparse_fwd(
                 inner_iter=inner_iter,
                 threads=threads,
             )
-        partial_o_batched, partial_lse_batched = kernel_partial(
-            q.unsqueeze(0), kv.unsqueeze(0), indices.unsqueeze(0)
-        )
+        if is_fp8_kv:
+            partial_o_batched, partial_lse_batched = kernel_partial(
+                q.unsqueeze(0),
+                kv.unsqueeze(0),
+                indices.unsqueeze(0),
+                topk_length.unsqueeze(0),
+            )
+        else:
+            partial_o_batched, partial_lse_batched = kernel_partial(
+                q.unsqueeze(0), kv.unsqueeze(0), indices.unsqueeze(0)
+            )
         n_groups = ni // inner_iter
         kernel_combine = sparse_mla_fwd_decode_combine(
             num_heads,
