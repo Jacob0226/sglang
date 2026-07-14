@@ -2154,12 +2154,18 @@ class DeepseekSparseAttnBackend(
             # CUDA / MUSA paths byte-identical to pre-patch by always re-cat.
             if q_all is None or not _is_hip:
                 q_all = concat_mla_absorb_q_general(q_nope, q_rope)
+            # `dsa_cache_seqlens_int32` is the per-token context length already
+            # clipped to index_topk (== count of valid, front-packed topk slots),
+            # so it doubles as the early-exit `topk_length` for the fp8 decode
+            # kernel (skip groups entirely in the -1 padding tail).
+            topk_length = getattr(metadata, "dsa_cache_seqlens_int32", None)
             return self._forward_tilelang(
                 q_all=q_all,
                 kv_cache=kv_cache,
                 page_table_1=page_table_1,
                 sm_scale=layer.scaling,
                 v_head_dim=layer.v_head_dim,
+                topk_length=topk_length,
             )
         elif self.dsa_decode_impl == "fa3":
             return self._forward_fa3(
@@ -2411,8 +2417,15 @@ class DeepseekSparseAttnBackend(
         v_head_dim: int,
         page_table_1: torch.Tensor,
         sm_scale: float,
+        topk_length: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         from sglang.srt.layers.attention.dsa.tilelang_kernel import tilelang_sparse_fwd
+
+        # Only pass topk_length when it lines up 1:1 with the query tokens; on any
+        # mismatch (e.g. speculative layouts) fall back to None (full 2048 groups,
+        # identical numerics) so we never risk skipping a valid group.
+        if topk_length is not None and topk_length.shape[0] != q_all.shape[0]:
+            topk_length = None
 
         return tilelang_sparse_fwd(
             q=q_all,
@@ -2420,6 +2433,7 @@ class DeepseekSparseAttnBackend(
             indices=page_table_1.unsqueeze(1),
             sm_scale=sm_scale,
             d_v=v_head_dim,
+            topk_length=topk_length,
         )
 
     def _forward_aiter(
