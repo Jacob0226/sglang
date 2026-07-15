@@ -2435,17 +2435,10 @@ class DeepseekSparseAttnBackend(
     ) -> torch.Tensor:
         q = q_all.reshape(-1, layer.tp_q_head_num * layer.head_dim)
 
-        # aiter's mla reduce (kn_mla_reduce_v1) does not support an fp8 output; the
-        # decode attn output is consumed by o_proj in bf16 anyway, so force bf16
-        # when q is fp8 (q.new_empty would otherwise inherit fp8 and abort).
-        out_dtype = torch.bfloat16 if q.dtype == fp8_dtype else q.dtype
-
         if layer.head_dim != layer.v_head_dim:
-            o = q.new_empty(
-                (q.shape[0], layer.tp_q_head_num * layer.v_head_dim), dtype=out_dtype
-            )
+            o = q.new_empty((q.shape[0], layer.tp_q_head_num * layer.v_head_dim))
         else:
-            o = torch.empty_like(q, dtype=out_dtype)
+            o = torch.empty_like(q)
 
         if self.need_pad_heads:
             q_kernel = q.view(
@@ -2456,8 +2449,7 @@ class DeepseekSparseAttnBackend(
                     q.shape[0],
                     layer.tp_q_head_num * self.head_repeat_factor,
                     layer.v_head_dim,
-                ),
-                dtype=out_dtype,
+                )
             )
         else:
             q_kernel = q.view(-1, layer.tp_q_head_num, layer.head_dim)
@@ -2468,12 +2460,6 @@ class DeepseekSparseAttnBackend(
         aiter_persistent_kwargs = {}
         if kv_cache.dtype == fp8_dtype:
             kv_scale = torch.ones((), dtype=torch.float32, device=q_kernel.device)
-        # aiter's fp8 asm MLA-decode (mla_decode_stage1_asm_fwd) requires BOTH
-        # q_scale and kv_scale when q is fp8; sglang previously left q_scale=None
-        # -> "fp8 Q requires q_scale and kv_scale" abort. q is cast to fp8 with
-        # unit scale (same convention as the fp8 KV cache), so q_scale = 1.0.
-        if q_kernel.dtype == fp8_dtype:
-            q_scale = torch.ones((), dtype=torch.float32, device=q_kernel.device)
 
         kv_indptr = self.kv_indptr
 
