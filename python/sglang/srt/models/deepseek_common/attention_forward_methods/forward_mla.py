@@ -159,6 +159,12 @@ if _use_aiter:
 # space puts 64x256 on top at every M from 1 to 16384: 1.9-2.9x at prefill M
 # and a flat ~3us at decode M, where the kernel is launch-bound.
 _ABSORB_BMM_TILE = os.environ.get("SGLANG_MLA_ABSORB_BMM_TILE", "64x256")
+# aiter's table also hands these shapes num_warps=8, which is 30% off at prefill
+# M once the scheduler feeds an EVEN_MN-aligned M (cache-cold, M=16384: w_kc
+# 221.1 -> 153.4 us, w_vc 189.3 -> 132.8 us). Decode M is dispatch-bound and
+# flat either way. 0 keeps whatever aiter picked. cache_modifier is left alone:
+# it is second-order here and the two shapes disagree on its sign.
+_ABSORB_BMM_WARPS = int(os.environ.get("SGLANG_MLA_ABSORB_BMM_WARPS", "4"))
 # Padding X so that M % BLOCK_M == 0 buys the kernel's EVEN_MN path, which
 # indexes rows directly instead of through `% M`. That is worth 2.2x on the
 # q_nope shape but costs a copy, so it is opt-in per call site.
@@ -189,6 +195,8 @@ def _absorb_bmm_config(M: int, N: int, K: int):
 
             cfg, _ = _get_config(M, N, K)
             cfg["BLOCK_SIZE_M"], cfg["BLOCK_SIZE_N"] = tile
+            if _ABSORB_BMM_WARPS:
+                cfg["num_warps"] = _ABSORB_BMM_WARPS
         except Exception:
             cfg = False
         _absorb_bmm_config_cache[key] = cfg
