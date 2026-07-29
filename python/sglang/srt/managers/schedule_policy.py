@@ -720,13 +720,20 @@ class PrefillAdder:
         max_new_tokens: int,
         retracted_stain: bool,
         mamba_gap_reserve: int = 0,
-        chunk_charge: Optional[int] = None,
+        compute_charge: Optional[int] = None,
     ):
-        # `chunk_charge` decouples the compute budget (`rem_chunk_tokens`, counted
-        # in forward-pass tokens) from the KV budgets below (counted in pages).
-        # Only the exact-chunk-fill path passes it; otherwise both are page-ceiled.
+        # `compute_charge` decouples the COMPUTE budgets (`rem_chunk_tokens` and
+        # `rem_input_tokens`, both counted in forward-pass tokens) from the KV
+        # budgets below, which are counted in pages. Both compute budgets have to
+        # move together: they are usually configured to the same value
+        # (chunked_prefill_size == max_prefill_tokens == 16384), so leaving either
+        # one page-ceiled makes it hit zero first and stop the admission loop while
+        # the other still has the rounding slack unspent.
+        # Only the exact-chunk-fill path passes it; otherwise everything is ceiled.
         # TODO(lsyin): check this workaround logic, which only ensures the prefill will not out of memory, and may be too conservative
         extend_input_len = self.ceil_paged_tokens(extend_input_len)
+        if compute_charge is None:
+            compute_charge = extend_input_len
 
         # alloc_extend reserves an extra page_size per request to make sure the budget doesn't over-commit
         page_overhead = self.page_size
@@ -744,25 +751,26 @@ class PrefillAdder:
         # separately so full_evictable can't cover it — see __init__).
         if mamba_gap_reserve and self.rem_mamba_slots is not None:
             self.rem_mamba_slots -= 1
-        self.rem_input_tokens -= extend_input_len
+        self.rem_input_tokens -= compute_charge
 
         if self.is_hybrid_swa:
             self.rem_swa_token_offset += self._swa_budget_for_req(extend_input_len)
 
         if self.dllm_config is not None:
-            self.rem_dllm_tokens -= extend_input_len
+            self.rem_dllm_tokens -= compute_charge
         elif self.rem_chunk_tokens is not None:
-            self.rem_chunk_tokens -= (
-                extend_input_len if chunk_charge is None else chunk_charge
-            )
+            self.rem_chunk_tokens -= compute_charge
 
         # reprocessed_log_* is a subset of log_*; metrics_reporter subtracts it
         # when computing the first-attempt prefix cache hit rate.
+        # `#new-token` reports the tokens the forward actually runs (the
+        # long-standing TODO below `log_input_tokens`) whenever the caller gives
+        # the raw count.
         self.log_hit_tokens += prefix_len
-        self.log_input_tokens += extend_input_len
+        self.log_input_tokens += compute_charge
         if retracted_stain:
             self.reprocessed_log_hit_tokens += prefix_len
-            self.reprocessed_log_input_tokens += extend_input_len
+            self.reprocessed_log_input_tokens += compute_charge
 
     def _get_dllm_remain_tokens(self) -> int:
         _rem_tokens = min(
@@ -874,7 +882,7 @@ class PrefillAdder:
             ),
             req.retracted_stain,
             mamba_gap_reserve=self._mamba_gap_budget_for_req(req),
-            chunk_charge=req.extend_range.length if self.exact_chunk_fill else None,
+            compute_charge=req.extend_range.length if self.exact_chunk_fill else None,
         )
 
         # Return if chunked prefill not finished
@@ -987,6 +995,9 @@ class PrefillAdder:
                 min(req.sampling_params.max_new_tokens, CLIP_MAX_NEW_TOKENS),
                 req.retracted_stain,
                 mamba_gap_reserve=self._mamba_gap_budget_for_req(req),
+                compute_charge=(
+                    req.extend_range.length if self.exact_chunk_fill else None
+                ),
             )
         else:
             if self.rem_chunk_tokens <= 0:
@@ -1007,6 +1018,7 @@ class PrefillAdder:
                 0,
                 req.retracted_stain,
                 mamba_gap_reserve=self._mamba_gap_budget_for_req(req),
+                compute_charge=trunc_len if self.exact_chunk_fill else None,
             )
 
         return self.budget_state()
@@ -1151,7 +1163,7 @@ class PrefillAdder:
                     ),
                     req.retracted_stain,
                     mamba_gap_reserve=self._mamba_gap_budget_for_req(req),
-                    chunk_charge=raw_input_tokens if self.exact_chunk_fill else None,
+                    compute_charge=raw_input_tokens if self.exact_chunk_fill else None,
                 )
             elif self.exact_chunk_fill:
                 # Take the remainder verbatim so the batch hits exactly
@@ -1181,7 +1193,7 @@ class PrefillAdder:
                     0,
                     req.retracted_stain,
                     mamba_gap_reserve=self._mamba_gap_budget_for_req(req),
-                    chunk_charge=trunc_len,
+                    compute_charge=trunc_len,
                 )
             else:
                 # Make sure at least one page is available
