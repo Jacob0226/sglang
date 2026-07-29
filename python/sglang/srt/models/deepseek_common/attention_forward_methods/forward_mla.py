@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
@@ -150,6 +151,62 @@ if _use_aiter:
     from aiter.ops.triton.batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant import (
         batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant,
     )
+
+# Tile for the MLA absorb bmm (q_nope@w_kc, attn_out@w_vc), as "<BLOCK_M>x
+# <BLOCK_N>"; "off" restores the aiter default. aiter ships no tuned entry for
+# these shapes and its generic table only has buckets up to M_LEQ_256, so
+# prefill lands on the untuned 32x128 fallback. A sweep of the full config
+# space puts 64x256 on top at every M from 1 to 16384: 1.9-2.9x at prefill M
+# and a flat ~3us at decode M, where the kernel is launch-bound.
+_ABSORB_BMM_TILE = os.environ.get("SGLANG_MLA_ABSORB_BMM_TILE", "64x256")
+# Padding X so that M % BLOCK_M == 0 buys the kernel's EVEN_MN path, which
+# indexes rows directly instead of through `% M`. That is worth 2.2x on the
+# q_nope shape but costs a copy, so it is opt-in per call site.
+_ABSORB_BMM_PAD = os.environ.get("SGLANG_MLA_ABSORB_BMM_PAD", "0") == "1"
+_ABSORB_BMM_PAD_MIN_M = int(os.environ.get("SGLANG_MLA_ABSORB_BMM_PAD_MIN_M", "2048"))
+_absorb_bmm_config_cache = {}
+
+
+def _absorb_bmm_tile():
+    if _ABSORB_BMM_TILE.lower() in ("off", "", "0"):
+        return None
+    bm, _, bn = _ABSORB_BMM_TILE.partition("x")
+    return int(bm), int(bn)
+
+
+def _absorb_bmm_config(M: int, N: int, K: int):
+    """Tile config for the MLA absorb bmm, or None for the aiter default."""
+    tile = _absorb_bmm_tile()
+    if tile is None:
+        return None
+    key = (N, K)
+    cfg = _absorb_bmm_config_cache.get(key)
+    if cfg is None:
+        try:
+            from aiter.ops.triton._triton_kernels.gemm.batched.batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant import (
+                _get_config,
+            )
+
+            cfg, _ = _get_config(M, N, K)
+            cfg["BLOCK_SIZE_M"], cfg["BLOCK_SIZE_N"] = tile
+        except Exception:
+            cfg = False
+        _absorb_bmm_config_cache[key] = cfg
+    return dict(cfg) if cfg else None
+
+
+def _absorb_bmm_pad_m(x: torch.Tensor) -> int:
+    """Rows to pad X to so the absorb bmm gets EVEN_MN, or 0 to skip."""
+    tile = _absorb_bmm_tile()
+    if not _ABSORB_BMM_PAD or tile is None:
+        return 0
+    bm = tile[0]
+    m = x.shape[0]
+    if m < _ABSORB_BMM_PAD_MIN_M or m % bm == 0:
+        return 0
+    return -(-m // bm) * bm
+
+
 if _use_aiter_gfx95:
     from aiter.ops.triton.fused_fp8_quant import (
         fused_flatten_fp8_group_quant,
@@ -491,8 +548,19 @@ class DeepseekMLAForwardMixin:
                     ):
                         # fp8 Triton kernel: always on gfx950,
                         # cudagraph-only on gfx942 (hides launch overhead)
+                        _m = q_nope.shape[0]
+                        _m_pad = _absorb_bmm_pad_m(q_nope)
+                        _x = q_nope
+                        if _m_pad:
+                            _x = torch.empty(
+                                _m_pad,
+                                *q_nope.shape[1:],
+                                device=q_nope.device,
+                                dtype=q_nope.dtype,
+                            )
+                            _x.narrow(0, 0, _m).copy_(q_nope)
                         q_nope_out = batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant(
-                            X=q_nope,
+                            X=_x,
                             WQ=self.w_kc.transpose(-1, -2),
                             w_scale=self.w_scale,
                             group_size=128,
@@ -500,7 +568,14 @@ class DeepseekMLAForwardMixin:
                             transpose_bm=False,  # (B, M, N)
                             transpose_bm_in=True,  # (M, B, K)
                             dtype=torch.bfloat16,
+                            config=_absorb_bmm_config(
+                                _x.shape[0],
+                                self.w_kc.shape[-1],
+                                self.w_kc.shape[-2],
+                            ),
                         )
+                        if _m_pad:
+                            q_nope_out = q_nope_out[:, :_m, :]
 
                     else:
                         q_nope_out = torch.bmm(
@@ -893,6 +968,11 @@ class DeepseekMLAForwardMixin:
                         transpose_bm=True,
                         transpose_bm_in=True,
                         dtype=torch.bfloat16,
+                        config=_absorb_bmm_config(
+                            attn_output.shape[0],
+                            self.w_vc.shape[-1],
+                            self.w_vc.shape[-2],
+                        ),
                     )
                     attn_bmm_output = _bmm_buf
                 else:
@@ -901,11 +981,20 @@ class DeepseekMLAForwardMixin:
                         self.w_vc.to(torch.bfloat16) * self.w_scale,
                     )
 
+            # SGLANG_DSA_FP8_PROJ_GEMM may put o_proj on the per-token/per-channel
+            # FP8 path, which quantizes the activation inside apply() and so needs
+            # a plain bf16 input rather than the group-quant tuple built below.
+            _o_proj_wants_bf16 = getattr(
+                self.o_proj, "_sglang_online_fp8_needs_bf16_input", False
+            )
             if _bmm_buf is not None:
                 # _bmm_buf is already (batch, heads, dim) contiguous
                 if self.o_proj.weight.dtype == torch.uint8:
                     attn_bmm_output = fused_flatten_mxfp4_quant(_bmm_buf)
-                elif self.o_proj.weight.dtype == torch.float8_e4m3fn:
+                elif (
+                    self.o_proj.weight.dtype == torch.float8_e4m3fn
+                    and not _o_proj_wants_bf16
+                ):
                     attn_bmm_output = fused_flatten_fp8_group_quant(
                         _bmm_buf,
                         group_size=128,
@@ -921,7 +1010,10 @@ class DeepseekMLAForwardMixin:
             elif self.o_proj.weight.dtype == torch.uint8:
                 attn_bmm_output = attn_bmm_output.transpose(0, 1)
                 attn_bmm_output = fused_flatten_mxfp4_quant(attn_bmm_output)
-            elif self.o_proj.weight.dtype == torch.float8_e4m3fn:
+            elif (
+                self.o_proj.weight.dtype == torch.float8_e4m3fn
+                and not _o_proj_wants_bf16
+            ):
                 attn_bmm_output = attn_bmm_output.transpose(0, 1)
                 attn_bmm_output = fused_flatten_fp8_group_quant(
                     attn_bmm_output,

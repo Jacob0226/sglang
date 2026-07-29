@@ -689,6 +689,17 @@ class Envs:
     SGLANG_ENABLE_PCG_DSV2_DUAL_STREAM = EnvBool(False)
     SGLANG_DSA_TOPK_BROADCAST = EnvBool(False)
     SGLANG_DISABLE_DSA_INDEXER_FUSION = EnvBool(False)
+    # Force online FP8 (dynamic, per-token-group activation) on the MLA projection
+    # linears that Quark MXFP4 checkpoints leave in bf16 (q_a/kv_a/q_b/o_proj). These
+    # run as bf16 Tensile GEMMs otherwise; ATOM runs the same weights in FP8. Reuses
+    # Fp8LinearMethod's bf16->fp8 online path. Trades a small accuracy budget for
+    # ~2x GEMM throughput on these projections. See quark.get_quant_method.
+    SGLANG_DSA_FP8_PROJ_GEMM = EnvBool(False)
+    # Charge the chunked-prefill budget in raw tokens and let the last request of
+    # a prefill batch consume the exact remainder, instead of flooring its length
+    # to a page. Keeps the forward-pass token count at chunked_prefill_size so the
+    # dense GEMMs get an aligned M. gfx95 only — see PrefillAdder.exact_chunk_fill.
+    SGLANG_EXACT_CHUNK_FILL = EnvBool(True)
     # Dense-decode: force k-only (skip indexer) under a captured decode graph.
     # Only safe when EVERY request's kv_len <= index_topk (single static graph).
     SGLANG_DSA_DECODE_DENSE_GRAPH = EnvBool(False)

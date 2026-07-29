@@ -2,10 +2,12 @@
 
 import fnmatch
 import logging
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, List, Optional, cast
 
 import torch
 
+from sglang.srt.environ import envs
 from sglang.srt.layers.linear import LinearBase
 from sglang.srt.layers.moe import MoeRunnerConfig
 from sglang.srt.layers.quantization.base_config import (  # noqa: E501
@@ -37,6 +39,171 @@ if TYPE_CHECKING:
 __all__ = ["QuarkLinearMethod", "QuarkFusedMoEMethod"]
 
 logger = logging.getLogger(__name__)
+
+# MLA-attention projection linears that Quark MXFP4 checkpoints leave in the
+# `exclude` list (i.e. bf16). SGLANG_DSA_FP8_PROJ_GEMM re-quantizes them to FP8
+# at load time so they match ATOM, which runs the same weights in FP8.
+#
+# Three FP8 flavours are available and they are far from equivalent. Measured on
+# GLM-5.2-MXFP4 i8k/conc64 prefill (MI355X), summed over the 78 calls one
+# projection makes per EXTEND forward, GEMM plus whatever activation quant it
+# needs:
+#
+#   o_proj (M=16368, N=6144, K=4096)
+#     bf16       Tensile Cijk_BBS  46.3 + flatten (a free view)         = 46.3ms
+#     pertensor  Tensile Cijk_F8BS 21.9 + amax 6.6 + scaled_quant 3.2   = 31.7ms
+#     ptpc       aiter bpreshuffle 34.4 + per_token_group_quant 3.1     = 37.5ms
+#     block      CK blockscale     57.0 + fused_flatten_fp8_quant 13.3  = 70.3ms
+#   q_b_proj
+#     bf16       aiter bf16gemm    16.0 + fused_qk_rmsnorm 2.6          = 18.6ms
+#     block      CK blockscale     15.4 + fused_rms_fp8_group_quant 3.1 = 18.5ms
+#
+# Tensile's FP8 GEMM is roughly twice as fast as either aiter/CK kernel on the
+# o_proj shape, so the per-tensor route is the fastest of the three: it cut the
+# prefill EXTEND forward by 11.3ms. What it must avoid is aiter's
+# dynamic_per_tensor_quant: that is 3 kernels whose amax atomicMax'es every
+# block into one global float, 17.4ms where a plain reduction takes 6.6ms.
+#
+# All three are nevertheless off by default, because end to end none of them
+# pays: per-tensor o_proj measured GSM8K 0.922 vs 0.936 baseline and output
+# throughput 1930 vs 2049 tok/s at i1k/conc64. The GEMM win is a prefill-only
+# effect while the activation quant is pure overhead at decode-sized M, and a
+# single scale over the whole activation is too coarse once real inputs have
+# outlier tokens (a synthetic normal input hides this: relative L2 vs bf16 is
+# 0.0374 per-tensor, 0.0375 per-token).
+#
+# q_b_proj is break-even in every flavour, so it stays bf16. kv_b_proj is out of
+# scope: on the absorb path it is folded into w_kc/w_vc and consumed by a bmm,
+# not a standard Linear.apply.
+#
+# pertensor and ptpc quantize the activation inside apply() and so need a bf16
+# input; those layers are marked and the MLA forward skips its fused pre-quant.
+_FP8_PROJ_GEMM_BLOCK_SUFFIXES = ()
+_FP8_PROJ_GEMM_PTPC_SUFFIXES = ()
+_FP8_PROJ_GEMM_PER_TENSOR_SUFFIXES = ()
+
+_FP8_PROJ_GEMM_BLOCK_SIZE = [128, 128]
+
+
+def _fp8_proj_gemm_mode(prefix: str) -> Optional[str]:
+    if "self_attn" not in prefix:
+        return None
+    for mode, suffixes in (
+        ("block", _FP8_PROJ_GEMM_BLOCK_SUFFIXES),
+        ("ptpc", _FP8_PROJ_GEMM_PTPC_SUFFIXES),
+        ("pertensor", _FP8_PROJ_GEMM_PER_TENSOR_SUFFIXES),
+    ):
+        if suffixes and prefix.endswith(suffixes):
+            return mode
+    return None
+
+
+def _block_cast_to_fp8(
+    weight: torch.Tensor, block_size: List[int]
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize a [N, K] weight to FP8 with one fp32 scale per block_n x block_k tile."""
+    from sglang.kernels.ops.quantization.fp8_kernel import fp8_dtype, fp8_max
+
+    block_n, block_k = block_size
+    n, k = weight.shape
+    assert n % block_n == 0 and k % block_k == 0, (
+        f"SGLANG_DSA_FP8_PROJ_GEMM needs a weight divisible by {block_size}, "
+        f"got {(n, k)}. Drop this projection from _FP8_PROJ_GEMM_BLOCK_SUFFIXES."
+    )
+    tiles = weight.view(n // block_n, block_n, k // block_k, block_k).float()
+    scale = tiles.abs().amax(dim=(1, 3), keepdim=True).clamp(min=1e-4) / fp8_max
+    qweight = (tiles / scale).clamp(min=-fp8_max, max=fp8_max).to(fp8_dtype)
+    return (
+        qweight.view(n, k).contiguous(),
+        scale.view(n // block_n, k // block_k).contiguous(),
+    )
+
+
+@lru_cache(maxsize=1)
+def _online_fp8_linear_classes() -> dict:
+    # Imported lazily: fp8.py pulls in a large chunk of the quantization stack.
+    from sglang.srt.layers.quantization.fp8 import Fp8Config, Fp8LinearMethod
+
+    def _online_config() -> Fp8Config:
+        return Fp8Config(
+            is_checkpoint_fp8_serialized=False, activation_scheme="dynamic"
+        )
+
+    class OnlinePerTensorFp8LinearMethod(Fp8LinearMethod):
+        """Per-tensor activation x per-tensor weight FP8, via Tensile _scaled_mm.
+
+        Weight setup is the stock non-block online path. Only apply() is
+        replaced, to compute the activation scale with a plain reduction instead
+        of aiter's dynamic_per_tensor_quant (3 kernels, contended atomicMax).
+        """
+
+        def __init__(self):
+            super().__init__(quant_config=_online_config())
+
+        def apply(self, layer, x, bias=None):
+            import aiter
+
+            from sglang.kernels.ops.quantization.fp8_kernel import fp8_max
+
+            x_2d = x.view(-1, x.shape[-1])
+            amax = torch.linalg.vector_norm(x_2d, ord=torch.inf).float()
+            x_scale = (amax / fp8_max).clamp(min=1e-12).view(1)
+            q_x, _ = aiter.per_tensor_quant_hip(
+                x_2d, scale=x_scale, quant_dtype=aiter.dtypes.fp8
+            )
+            out = torch._scaled_mm(
+                q_x,
+                layer.weight,
+                out_dtype=x.dtype,
+                scale_a=x_scale,
+                scale_b=layer.weight_scale,
+                bias=bias,
+            )
+            return out.view(*x.shape[:-1], out.shape[-1])
+
+    class OnlinePtpcFp8LinearMethod(Fp8LinearMethod):
+        """Per-token activation x per-channel weight FP8, via aiter bpreshuffle.
+
+        The stock non-block path already implements this; it just needs
+        use_aiter_fp8_per_token, which is otherwise driven by a global env var.
+        """
+
+        def __init__(self):
+            super().__init__(quant_config=_online_config())
+            self.use_aiter_fp8_per_token = True
+
+    class OnlineBlockFp8LinearMethod(Fp8LinearMethod):
+        """Block-FP8 linear for bf16 weights that the checkpoint left unquantized.
+
+        Fp8Config rejects weight_block_size unless the checkpoint is fp8-serialized,
+        so the config is built without it and block_quant is switched on afterwards.
+        create_weights then allocates a bf16 weight (which is what the checkpoint
+        holds) and no scale parameter, and we quantize into weight_scale_inv here
+        before the stock block-FP8 post-processing runs.
+        """
+
+        def __init__(self):
+            config = _online_config()
+            config.weight_block_size = _FP8_PROJ_GEMM_BLOCK_SIZE
+            super().__init__(quant_config=config)
+
+        def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+            qweight, weight_scale = _block_cast_to_fp8(
+                layer.weight.data, _FP8_PROJ_GEMM_BLOCK_SIZE
+            )
+            layer.weight = torch.nn.Parameter(qweight, requires_grad=False)
+            layer.register_parameter(
+                "weight_scale_inv",
+                torch.nn.Parameter(weight_scale, requires_grad=False),
+            )
+            layer.input_scale = None
+            super().process_weights_after_loading(layer)
+
+    return {
+        "block": OnlineBlockFp8LinearMethod,
+        "ptpc": OnlinePtpcFp8LinearMethod,
+        "pertensor": OnlinePerTensorFp8LinearMethod,
+    }
 
 _MOE_SHARED_EXPERT_QUANT_LAYER0_BASES: tuple[str, ...] = (
     "model.layers.0",
@@ -131,6 +298,20 @@ class QuarkConfig(QuantizationConfig):
             fused_mapping=self.packed_modules_mapping,
         ):
             if isinstance(layer, LinearBase):
+                mode = (
+                    _fp8_proj_gemm_mode(prefix)
+                    if envs.SGLANG_DSA_FP8_PROJ_GEMM.get()
+                    else None
+                )
+                if mode is not None:
+                    logger.info_once(
+                        "SGLANG_DSA_FP8_PROJ_GEMM: %s FP8 for MLA proj %s", mode, prefix
+                    )
+                    # These modes quantize the activation themselves and need
+                    # bf16 in; the MLA forward checks this before emitting its
+                    # pre-quant tuple.
+                    layer._sglang_online_fp8_needs_bf16_input = mode != "block"
+                    return _online_fp8_linear_classes()[mode]()
                 return UnquantizedLinearMethod()
             elif isinstance(layer, RadixAttention):
                 return QuarkKVCacheMethod(self)
