@@ -689,6 +689,11 @@ class Envs:
     SGLANG_ENABLE_PCG_DSV2_DUAL_STREAM = EnvBool(False)
     SGLANG_DSA_TOPK_BROADCAST = EnvBool(False)
     SGLANG_DISABLE_DSA_INDEXER_FUSION = EnvBool(False)
+    # Charge the chunked-prefill budget in raw tokens and let the last request of
+    # a prefill batch consume the exact remainder, instead of flooring its length
+    # to a page. Keeps the forward-pass token count at chunked_prefill_size so the
+    # dense GEMMs get an aligned M. gfx95 only -- see PrefillAdder.exact_chunk_fill.
+    SGLANG_EXACT_CHUNK_FILL = EnvBool(True)
     # Dense-decode: force k-only (skip indexer) under a captured decode graph.
     # Only safe when EVERY request's kv_len <= index_topk (single static graph).
     SGLANG_DSA_DECODE_DENSE_GRAPH = EnvBool(False)
