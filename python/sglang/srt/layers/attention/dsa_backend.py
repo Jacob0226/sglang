@@ -2168,10 +2168,9 @@ class DeepseekSparseAttnBackend(
                 v_head_dim=layer.v_head_dim,
             )
         elif self.dsa_decode_impl == "triton":
-            if q_all is None or not _is_hip:
-                q_all = concat_mla_absorb_q_general(q_nope, q_rope)
             return self._forward_triton_decode(
-                q_all=q_all,
+                q_nope=q_nope,
+                q_rope=q_rope,
                 kv_cache=kv_cache,
                 v_head_dim=layer.v_head_dim,
                 page_table_1=page_table_1,
@@ -2756,7 +2755,8 @@ class DeepseekSparseAttnBackend(
 
     def _forward_triton_decode(
         self,
-        q_all: torch.Tensor,
+        q_nope: torch.Tensor,
+        q_rope: torch.Tensor,
         kv_cache: torch.Tensor,
         v_head_dim: int,
         page_table_1: torch.Tensor,
@@ -2767,7 +2767,8 @@ class DeepseekSparseAttnBackend(
         )
 
         return triton_sparse_mla_decode_splitk(
-            q=q_all,
+            q_nope=q_nope,
+            q_rope=q_rope,
             kv=kv_cache,
             indices=page_table_1.unsqueeze(1),
             sm_scale=sm_scale,
