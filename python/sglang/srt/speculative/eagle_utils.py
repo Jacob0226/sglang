@@ -12,6 +12,9 @@ from sglang.kernels.ops.speculative.spec_tree import (
     sgl_build_tree_kernel_efficient_triton,
     verify_tree_greedy_kernel_triton,
 )
+from sglang.kernels.ops.speculative.tree_sampling import (
+    tree_speculative_sampling_target_only_triton,
+)
 from sglang.srt.hardware_backend.npu.dsv4.dsv4_common_hooks import (
     maybe_build_dsv4_verify_bundle,
 )
@@ -334,6 +337,21 @@ def sgl_build_tree_kernel_triton(
         ),
         selected_index_stride=selected_index.stride(0),
     )
+
+
+def _get_spec_sampling_verify_fn(use_rejection_sampling: bool):
+    if use_rejection_sampling:
+        from sglang.kernels.ops.speculative.reject_sampling import (
+            chain_speculative_sampling_triton,
+        )
+
+        return chain_speculative_sampling_triton
+    if _is_hip:
+        return tree_speculative_sampling_target_only_triton
+
+    from sgl_kernel import tree_speculative_sampling_target_only
+
+    return tree_speculative_sampling_target_only
 
 
 def verify_tree_greedy_triton(
@@ -736,25 +754,7 @@ def eagle_sample(
             topk=verify_input.tree_topk,
         )
     else:
-        from sglang.kernels.ops.speculative.reject_sampling import (
-            chain_speculative_sampling_triton,
-        )
-
         use_rejection_sampling = get_spec().speculative_use_rejection_sampling
-
-        # `speculative_sampling.cu` (tree_speculative_sampling_target_only) is not
-        # part of the ROCm sgl-kernel build, so the only distribution-preserving
-        # verifier available there is the Triton chain kernel. Fail loudly instead
-        # of silently degrading non-greedy requests to greedy verification, which
-        # breaks the losslessness guarantee of speculative decoding.
-        if _is_hip and not use_rejection_sampling:
-            raise NotImplementedError(
-                "Speculative decoding with non-greedy sampling (temperature/top_p/"
-                "top_k) requires --speculative-use-rejection-sampling on ROCm: the "
-                "tree_speculative_sampling_target_only kernel is CUDA-only. Without "
-                "it, verification would fall back to greedy and change the output "
-                "distribution."
-            )
 
         # Apply temperature and get target probs
         expanded_temperature = torch.repeat_interleave(
@@ -807,13 +807,7 @@ def eagle_sample(
             device=device,
         )
 
-        if use_rejection_sampling:
-            sampling_fn = chain_speculative_sampling_triton
-        else:
-            # Imported lazily: this op is absent from the ROCm sgl-kernel build.
-            from sgl_kernel import tree_speculative_sampling_target_only
-
-            sampling_fn = tree_speculative_sampling_target_only
+        sampling_fn = _get_spec_sampling_verify_fn(use_rejection_sampling)
         sampling_fn(
             predicts=predict,  # mutable
             accept_index=accept_index,  # mutable

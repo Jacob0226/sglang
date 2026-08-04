@@ -4,6 +4,7 @@ register_cuda_ci(est_time=30, stage="base-b", runner_config="1-gpu-small")
 register_amd_ci(est_time=30, stage="stage-b", runner_config="1-gpu-small-amd")
 
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -18,6 +19,27 @@ BATCH = 8192
 REPEATS = 4
 # Deliberately skewed so a greedy verifier has an unambiguous argmax to collapse to.
 TARGET_ROW = torch.tensor([0.35, 0.25, 0.20, 0.10, 0.05, 0.03, 0.015, 0.005])
+
+
+class TestSpecSamplingDispatch(CustomTestCase):
+    def test_hip_target_only_uses_triton_tree(self):
+        from sglang.kernels.ops.speculative.tree_sampling import (
+            tree_speculative_sampling_target_only_triton,
+        )
+        from sglang.srt.speculative import eagle_utils
+
+        with patch.object(eagle_utils, "_is_hip", True):
+            sampling_fn = eagle_utils._get_spec_sampling_verify_fn(False)
+        self.assertIs(sampling_fn, tree_speculative_sampling_target_only_triton)
+
+    def test_rejection_sampling_uses_triton_chain(self):
+        from sglang.kernels.ops.speculative.reject_sampling import (
+            chain_speculative_sampling_triton,
+        )
+        from sglang.srt.speculative import eagle_utils
+
+        sampling_fn = eagle_utils._get_spec_sampling_verify_fn(True)
+        self.assertIs(sampling_fn, chain_speculative_sampling_triton)
 
 
 def _chain_topology(batch_size: int, num_draft: int, device: torch.device):
