@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 import torch
 
@@ -361,6 +362,131 @@ class TestTreeSpeculativeSamplingTriton(CustomTestCase):
         )
         for first_tensor, second_tensor in zip(first, second):
             torch.testing.assert_close(first_tensor, second_tensor)
+
+    def test_dflash_sampling_integration_matches_oracle(self):
+        from sglang.srt.speculative.dflash_utils import (
+            compute_dflash_sampling_correct_drafts_and_bonus,
+            is_dflash_sampling_verify_available,
+        )
+
+        if not is_dflash_sampling_verify_available():
+            self.skipTest("DFLASH sampling verification is unavailable.")
+
+        batch_size = 2
+        num_draft_tokens = 3
+        vocab_size = 7
+        generator = torch.Generator(device=self.device).manual_seed(11)
+        candidates = torch.randint(
+            0,
+            vocab_size,
+            (batch_size, num_draft_tokens),
+            dtype=torch.int64,
+            device=self.device,
+            generator=generator,
+        )
+        target_probs = torch.softmax(
+            torch.randn(
+                (batch_size, num_draft_tokens, vocab_size),
+                dtype=torch.float32,
+                device=self.device,
+                generator=generator,
+            ),
+            dim=-1,
+        )
+        uniform_samples = torch.rand(
+            (batch_size, num_draft_tokens),
+            dtype=torch.float32,
+            device=self.device,
+            generator=generator,
+        )
+        final_coins = torch.rand(
+            (batch_size,),
+            dtype=torch.float32,
+            device=self.device,
+            generator=generator,
+        )
+        sampling_info = SimpleNamespace(
+            temperatures=torch.ones(
+                (batch_size, 1),
+                dtype=torch.float32,
+                device=self.device,
+            ),
+            need_top_k_sampling=False,
+            need_top_p_sampling=False,
+            top_ks=torch.full(
+                (batch_size,),
+                vocab_size,
+                dtype=torch.int32,
+                device=self.device,
+            ),
+            top_ps=torch.ones(
+                (batch_size,),
+                dtype=torch.float32,
+                device=self.device,
+            ),
+        )
+        num_correct_drafts, bonus_tokens = (
+            compute_dflash_sampling_correct_drafts_and_bonus(
+                candidates=candidates,
+                next_token_logits=target_probs.log().view(
+                    batch_size * num_draft_tokens,
+                    vocab_size,
+                ),
+                sampling_info=sampling_info,
+                uniform_samples=uniform_samples,
+                uniform_samples_for_final_sampling=final_coins,
+                threshold_single=1.0,
+                threshold_acc=1.0,
+                use_sparse_topk=False,
+            )
+        )
+
+        retrieve_index = torch.arange(
+            batch_size * num_draft_tokens,
+            dtype=torch.int64,
+            device=self.device,
+        ).view(batch_size, num_draft_tokens)
+        retrieve_next_token = torch.tensor(
+            [1, 2, -1],
+            dtype=torch.int64,
+            device=self.device,
+        ).expand(batch_size, -1)
+        retrieve_next_sibling = torch.full(
+            (batch_size, num_draft_tokens),
+            -1,
+            dtype=torch.int64,
+            device=self.device,
+        )
+        reference = _tree_target_only_reference(
+            candidates=candidates,
+            retrieve_index=retrieve_index,
+            retrieve_next_token=retrieve_next_token,
+            retrieve_next_sibling=retrieve_next_sibling,
+            uniform_samples=uniform_samples,
+            uniform_samples_for_final_sampling=final_coins,
+            target_probs=target_probs,
+            threshold_single=1.0,
+            threshold_acc=1.0,
+            max_tree_depth=num_draft_tokens,
+        )
+        reference_predicts, reference_accept_index, reference_num_correct, _ = (
+            reference
+        )
+        row_ids = torch.arange(batch_size)
+        reference_bonus = reference_predicts[
+            reference_accept_index[
+                row_ids,
+                reference_num_correct.to(torch.long),
+            ]
+        ]
+        torch.testing.assert_close(
+            num_correct_drafts.cpu(),
+            reference_num_correct,
+        )
+        torch.testing.assert_close(
+            bonus_tokens.cpu(),
+            reference_bonus.to(torch.int64),
+        )
 
     def test_branched_tree_preserves_target_distribution(self):
         batch_size = 8192
