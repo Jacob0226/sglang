@@ -142,6 +142,58 @@ class TestSpecVerifyDistribution(CustomTestCase):
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "GPU is required for this test.")
+class TestPortableSpecRenorm(CustomTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.device = torch.device("cuda")
+
+    def test_top_k_scalar_and_per_row(self):
+        from sglang.kernels.ops.sampling.renorm import top_k_renorm_probs_torch
+
+        probs = torch.tensor(
+            [[0.4, 0.3, 0.2, 0.1], [0.1, 0.2, 0.3, 0.4]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        expected_top1 = torch.tensor(
+            [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        torch.testing.assert_close(
+            top_k_renorm_probs_torch(probs, 1),
+            expected_top1,
+        )
+
+        top_ks = torch.tensor([2, 4], dtype=torch.int32, device=self.device)
+        renorm = top_k_renorm_probs_torch(probs, top_ks)
+        torch.testing.assert_close(
+            renorm.sum(dim=-1),
+            torch.ones(2, device=self.device),
+        )
+        self.assertEqual(torch.count_nonzero(renorm[0]).item(), 2)
+        torch.testing.assert_close(renorm[1], probs[1])
+
+    def test_top_p_per_row_and_zero_mass(self):
+        from sglang.kernels.ops.sampling.renorm import top_p_renorm_probs_torch
+
+        probs = torch.tensor(
+            [[0.4, 0.3, 0.2, 0.1], [0.0, 0.0, 0.0, 0.0]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        top_ps = torch.tensor([0.5, 0.95], dtype=torch.float32, device=self.device)
+        renorm = top_p_renorm_probs_torch(probs, top_ps)
+        expected = torch.tensor(
+            [[4.0 / 7.0, 3.0 / 7.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        torch.testing.assert_close(renorm, expected)
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "GPU is required for this test.")
 class TestSpecRenormFallbacks(CustomTestCase):
     """The torch renorm fallbacks must match the kernels they stand in for.
 
@@ -198,7 +250,7 @@ class TestSpecRenormFallbacks(CustomTestCase):
         )
 
     def test_top_k_fallback_matches_kernel(self):
-        from sglang.srt.speculative.eagle_utils import _top_k_normalize_probs_torch
+        from sglang.kernels.ops.sampling.renorm import top_k_renorm_probs_torch
 
         probs = self._probs(64, 4096, seed=0)
         for top_k in (1, 8, 512, 4096):
@@ -207,12 +259,12 @@ class TestSpecRenormFallbacks(CustomTestCase):
                     (probs.shape[0],), top_k, dtype=torch.int32, device=self.device
                 )
                 self._assert_close_in_distribution(
-                    _top_k_normalize_probs_torch(probs.clone(), top_ks),
+                    top_k_renorm_probs_torch(probs.clone(), top_ks),
                     self.top_k_renorm_prob(probs.clone(), top_ks),
                 )
 
     def test_top_p_fallback_matches_kernel(self):
-        from sglang.srt.layers.sampler import top_p_normalize_probs_torch
+        from sglang.kernels.ops.sampling.renorm import top_p_renorm_probs_torch
 
         probs = self._probs(64, 4096, seed=1)
         for top_p in (0.5, 0.9, 0.95, 1.0):
@@ -221,7 +273,7 @@ class TestSpecRenormFallbacks(CustomTestCase):
                     (probs.shape[0],), top_p, dtype=torch.float32, device=self.device
                 )
                 self._assert_close_in_distribution(
-                    top_p_normalize_probs_torch(probs.clone(), top_ps),
+                    top_p_renorm_probs_torch(probs.clone(), top_ps),
                     self.top_p_renorm_prob(probs.clone(), top_ps),
                 )
 

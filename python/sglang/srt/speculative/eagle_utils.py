@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import torch
 
+from sglang.kernels.ops.sampling import top_k_renorm_probs, top_p_renorm_probs
 from sglang.kernels.ops.speculative.spec_tree import (
     sgl_build_tree_kernel_efficient_triton,
     verify_tree_greedy_kernel_triton,
@@ -333,42 +334,6 @@ def sgl_build_tree_kernel_triton(
         ),
         selected_index_stride=selected_index.stride(0),
     )
-
-
-def _top_k_normalize_probs_torch(
-    probs: torch.Tensor,
-    top_ks: torch.Tensor,
-):
-    """Rank-based top-k renormalization with native torch ops.
-
-    Mirrors the top-k cutoff in `top_k_top_p_min_p_sampling_from_probs_torch` so
-    the speculative verify path matches the non-speculative sampler.
-    """
-    probs_sort, probs_idx = probs.sort(dim=-1, descending=True)
-    probs_sort[
-        torch.arange(0, probs.shape[-1], device=probs.device).view(1, -1)
-        >= top_ks.view(-1, 1)
-    ] = 0.0
-    probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True))
-    return torch.zeros_like(probs_sort).scatter_(-1, probs_idx, probs_sort)
-
-
-def _get_spec_renorm_fns():
-    """Return (top_k_renorm, top_p_renorm) for the current platform.
-
-    flashinfer's `renorm.cu` is not part of the ROCm sgl-kernel build (see
-    `sgl-kernel/setup_rocm.py`), so `top_k/top_p_renorm_prob` have no registered
-    torch op there. Fall back to the torch implementations that the
-    non-speculative sampler already uses on ROCm.
-    """
-    if _is_hip:
-        from sglang.srt.layers.sampler import top_p_normalize_probs_torch
-
-        return _top_k_normalize_probs_torch, top_p_normalize_probs_torch
-
-    from sgl_kernel import top_k_renorm_prob, top_p_renorm_prob
-
-    return top_k_renorm_prob, top_p_renorm_prob
 
 
 def verify_tree_greedy_triton(
@@ -791,8 +756,6 @@ def eagle_sample(
                 "distribution."
             )
 
-        top_k_renorm_prob, top_p_renorm_prob = _get_spec_renorm_fns()
-
         # Apply temperature and get target probs
         expanded_temperature = torch.repeat_interleave(
             sampling_info.temperatures, verify_input.draft_token_num, dim=0
@@ -803,7 +766,7 @@ def eagle_sample(
         )  # (bs * num_draft_tokens, vocab_size)
         maybe_detect_nan(target_probs, "v2 verify: target_probs after softmax")
         if sampling_info.need_top_k_sampling:
-            target_probs = top_k_renorm_prob(
+            target_probs = top_k_renorm_probs(
                 target_probs,
                 torch.repeat_interleave(
                     sampling_info.top_ks, verify_input.draft_token_num, dim=0
@@ -811,7 +774,7 @@ def eagle_sample(
             )  # (bs * num_draft_tokens, vocab_size)
             maybe_detect_nan(target_probs, "v2 verify: target_probs after top_k_renorm")
         if sampling_info.need_top_p_sampling:
-            target_probs = top_p_renorm_prob(
+            target_probs = top_p_renorm_probs(
                 target_probs,
                 torch.repeat_interleave(
                     sampling_info.top_ps, verify_input.draft_token_num, dim=0
