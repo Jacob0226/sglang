@@ -418,10 +418,7 @@ class LayerSplitDSATokenToKVPool(DSATokenToKVPool):
             if kv_cache.shape[0] == 0:
                 continue
             kv_cache[tgt_loc_flat] = kv_cache[src_loc_flat]
-        for index_k in self.index_k_with_scale_buffer:
-            if index_k.shape[0] == 0:
-                continue
-            index_k[tgt_loc_flat] = index_k[src_loc_flat]
+        self._move_index_k_cache(tgt_loc, src_loc)
 
     # ---- DSA indexer buffer: owned-only writes, owner-broadcast reads -----
 

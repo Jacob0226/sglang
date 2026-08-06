@@ -4381,10 +4381,29 @@ class DSATokenToKVPool(MLATokenToKVPool):
         if tgt_loc.numel() == 0:
             return
 
-        tgt_loc_flat = tgt_loc.view(-1).long()
-        src_loc_flat = src_loc.view(-1).long()
-        for index_k in self.index_k_with_scale_buffer:
-            index_k[tgt_loc_flat] = index_k[src_loc_flat]
+        self._move_index_k_cache(tgt_loc, src_loc)
+
+    def _move_index_k_cache(
+        self, tgt_loc: torch.Tensor, src_loc: torch.Tensor
+    ) -> None:
+        """Move token-granular indexer K/scale entries in their paged layout."""
+        buffers = [buf for buf in self.index_k_with_scale_buffer if buf.shape[0] > 0]
+        if not buffers or tgt_loc.numel() == 0:
+            return
+
+        scratch = torch.empty(
+            (tgt_loc.numel(), self.index_head_dim + 4),
+            dtype=torch.uint8,
+            device=tgt_loc.device,
+        )
+        for index_k in buffers:
+            index_buf_accessor.MoveKAndS.execute(
+                self,
+                index_k,
+                tgt_loc=tgt_loc,
+                src_loc=src_loc,
+                scratch=scratch,
+            )
 
     def get_index_k_with_scale_buffer(self, layer_id: int) -> torch.Tensor:
         if self.layer_transfer_counter is not None:
