@@ -118,6 +118,8 @@ batch 256 時 renorm 要 **40ms**，而 tree kernel 只要 0.33ms。原因是兩
   1536    38.457      8.305       5.027     7.7x
 ```
 
+**這張表量的是 logit scale 6.0 的分布**（`softmax(randn * 6.0)`，nucleus 約 40，不觸發 §6.6 說的 sort 退路）。當時沒有註明這件事，後來在 B200 上用未縮放的 `softmax(randn)` 重跑得到 17.78ms，一度被誤判為平台差異。renorm 的成本幾乎完全取決於 nucleus 是否超出 1024 前綴，**任何 renorm 數字都必須連同輸入分布一起記錄才有意義**。
+
 **一個容易踩的浮點陷阱**值得記錄：`cumsum >= top_p` 這個判定不可靠，因為 fp32 的機率總和是 0.99999994 而非 1.0。尖銳分布下前幾項就會捨入到 1.0，導致 `top_p=1.0` 反而砍掉整條尾巴（第一版實作就是如此，測出 225 萬筆 support 差異）。正確做法是以該 row 的實際總和為基準判定捨棄質量：`prefix <= total − (1 − top_p)`。
 
 ### 2.4 為什麼是 Triton，而不是直接 hipify
@@ -428,6 +430,70 @@ pivot 搜尋佔多少，完全看在哪個 regime。B200 上 `torch.topk(probs, 
 #### 剩下的缺口
 
 前置條件 1、2、3 已結案。4（e2e 準確度）、5（accept length 對照）仍未做，兩者都需要跑真實 model 而非 microbenchmark。
+
+### 6.6 MI355X 對照（gfx950，ROCm 7.2，torch 2.9.1，2026-08-06）
+
+§6.5 留下的待查落差已結案，而且答案不是平台差異。
+
+#### 5.0ms 對 20.9ms：是輸入分布，不是硬體
+
+同一支 `bench_renorm_aot.py` 在 MI355X 上跑出 top_k 2.427 + top_p 17.358 = **19.79ms**，B200 是 20.86ms。**兩邊幾乎相同，MI355X 還略快 5%。** 所以 §2.3 的 5.0ms 從來就不是跟 B200 的 17.78ms 同一個量測。
+
+差別在 `verify_renorm_triton.py` 第 100 行：`torch.softmax(torch.randn(rows, VOCAB) * 6.0, dim=-1)`。**§2.3 用的是 logit scale 6.0，而 `bench_renorm_aot.py` 用未縮放的 `softmax(randn)`。** 新增的 `bench_renorm_sweep.py` 把 overflow 比例印出來後，交叉點一目了然：
+
+```
+ scale    top1  nucleus    ovf  k_torch  k_triton  p_torch  p_triton
+     1   0.000   112545   100%    4.155     2.472   19.093    17.466
+     2   0.007    54988   100%    4.027     2.328   19.047    17.395
+     4   0.206     1842    84%    4.059     2.387   18.708    17.080
+     6   0.462       40     0%    4.012     2.337    4.254     2.620
+     8   0.618        8     0%    4.028     2.353    4.306     2.678
+    12   0.722        3     0%    4.022     2.364    4.293     2.687
+    16   0.817        2     0%    4.034     2.356    4.306     2.678
+    24   0.829        2     0%    4.371     2.698    4.662     3.043
+    32   0.881        1     0%    4.502     2.809    4.793     3.153
+```
+
+scale 4 到 6 之間 overflow 從 84% 掉到 0%，`p_triton` 跟著從 17.08ms 掉到 2.62ms。scale 6 時 top_k 2.337 + top_p 2.620 = **4.96ms**，精確重現 §2.3 記的 5.027ms。§6.5 猜「§2.3 的量測其實沒有觸發 overflow」是對的，只是原因不是巧合而是腳本明寫的 `* 6.0`。
+
+**教訓是量測沒有記錄輸入分布。** renorm 的成本幾乎完全由 overflow 與否決定，不記 logit scale 的 renorm 數字沒有意義。`bench_renorm_sweep.py` 因此固定輸出 `ovf` 欄。
+
+#### MI355X Triton vs B200 AOT
+
+把 §6.5 的 B200 sweep 與上表疊起來（`p_triton` 對 `aot`）：
+
+| scale | top1 | MI355X triton | B200 AOT | 誰快 | 倍數 |
+|---|---|---|---|---|---|
+| 1 | 0.000 | 17.466 | 3.448 | AOT | 5.07x |
+| 4 | 0.206 | 17.080 | 2.201 | AOT | 7.76x |
+| 6 | 0.462 | 2.620 | 2.060 | AOT | 1.27x |
+| 12 | 0.722 | 2.687 | 1.952 | AOT | 1.38x |
+| 16 | 0.817 | 2.678 | 3.940 | **Triton** | 1.47x |
+| 24 | 0.829 | 3.043 | 6.543 | **Triton** | 2.15x |
+| 32 | 0.881 | 3.153 | 4.880 | **Triton** | 1.55x |
+
+**在 `top1 ≥ 0.80` 的尖銳分布下，MI355X 跑 Triton 比 B200 跑原生 AOT 還快 1.47–2.15x。** 原因是 §6.5 已經指出的兩條曲線性質：Triton 與資料無關（overflow 消失後就是水平線），AOT 的三分搜尋則越尖越慢。交叉點落在 `nucleus ≤ 2` 附近。
+
+同時 MI355X 的 Triton 比 B200 的 Triton 快：fast path 是 2.62–3.15ms 對 B200 恆定的 3.40ms，約 1.25x。overflow regime 兩邊則幾乎相同（17.47 對 17.77），因為那裡量的是 `torch.sort` 而不是 kernel。
+
+必須註明這是**跨硬體比較**，混了硬體與軟體兩個變因，不能單獨解讀成「Triton 實作優於 AOT 實作」。
+
+#### tree kernel
+
+`--logit-scale 16 --iters 20`，ndt=8 / width 2 / depth 4：
+
+| bs | MI355X triton | B200 triton | B200 AOT |
+|---|---|---|---|
+| 128 | 0.1908 | 0.2080 | 0.1148 |
+| 256 | 0.2269 | 0.2228 | 0.1888 |
+
+bs=256 時 MI355X 與 B200 的 Triton 差 1.8%，形同相同。B200 AOT 在 bs=256 快 1.20x，絕對差 0.038ms。
+
+#### 對結論的影響
+
+§6.5 的「兩顆都不值得 hipify」不變，而且理由更強：tree kernel 的移植上限仍是 0.03ms 等級，renorm 最大的差距仍在 `torch.sort` 退路那個兩平台共通的 torch 層問題。新增的一點是**在真實推論的尖銳分布下，ROCm 的 Triton renorm 已經不輸 B200 的原生 kernel**，所以 renorm 的 hipify 動機比 §6.5 判斷的更低。
+
+反過來，§7 那個「兩次 topk 合併成一次」的價值被進一步確認：no-overflow regime 下 `k_triton` 2.34ms 加 `p_triton` 2.62ms，兩者都由 topk 主導，合併掉一次就是省掉接近一半。這是目前檯面上最值得做的 renorm 優化，而且兩個平台都會受益。
 
 ---
 
