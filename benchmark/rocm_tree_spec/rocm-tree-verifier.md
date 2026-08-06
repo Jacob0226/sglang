@@ -497,7 +497,78 @@ bs=256 時 MI355X 與 B200 的 Triton 差 1.8%，形同相同。B200 AOT 在 bs=
 
 ---
 
-## 7. 尚未處理的技術債
+## 7. overflow 退路：用更寬的前綴取代排序
+
+§6.6 指出 renorm 最大的一筆差距來自 `torch.sort` 退路，而它是兩平台共通的 torch 程式碼。這節記錄實際處理的過程。
+
+### 7.1 二分搜尋在純 torch 裡是死路
+
+直覺的修法是照 flashinfer 那樣二分搜尋門檻值，避開排序。實測後不成立（1536 列，151936 vocab）：
+
+```
+    full sort (current path)   13.408 ms
+         one masked-sum pass    0.886 ms
+      one compare+count pass    1.429 ms
+```
+
+一趟 `torch.where(probs > t, probs, 0).sum(-1)` 要 0.886ms，因為 torch 會**物化中間張量**（讀 933MB、寫 933MB、再讀 933MB），而不是像 kernel 那樣單趟讀完就地累加。收斂需要十幾輪，5 輪已經 4.4ms、17 輪比排序還慢。要達到 flashinfer 的成本必須自己寫 Triton 的 masked-sum kernel，那是另一個層級的改動。
+
+### 7.2 topk 的成本平台
+
+換個角度：與其避開選擇，不如讓選擇涵蓋更多情況。
+
+```
+                      topk k       ms
+                        1024    1.841
+                        2048    1.859
+                        4096    1.921   <- 平台末端
+                        8192    2.781
+                       16384    3.709
+                       32768    5.799
+```
+
+**1024 到 4096 幾乎免費（+4%），8192 才開始付錢。** 所以把 `_TOP_P_PREFIX` 放寬到 4096，等於用 4% 的選擇成本換掉 nucleus 落在 1024–4096 的所有列的 13.4ms 排序。
+
+這也解釋了 `bench_escalation.py` 當初為什麼被判死路：它每輪把 K 乘 8（1024 → 8192 → 65536 → vocab），一路衝出平台，末端比排序還慘。單步升到平台末端是性質不同的操作。
+
+### 7.3 結果
+
+`_TOP_P_PREFIX = 1024 → 4096`，top_p 耗時（ms）：
+
+| scale | nucleus | 前 | 後 | |
+|---|---|---|---|---|
+| 2 | 54988 | 17.395 | 17.669 | 仍走排序 |
+| 3 | 13774 | — | 17.671 | 仍走排序 |
+| **4** | **~1900** | **16.952** | **2.875** | **5.9x** |
+| 6 | 46 | 2.690 | 2.876 | +0.19ms |
+| 16 | 2 | 2.678 | 2.881 | +0.19ms |
+
+常見情況（nucleus < 1024）付出 +0.19ms，即 top_p 慢 7%、整條 renorm 慢 3.8%；換到的是 nucleus 1024–4096 這段從 19.3ms 降到 5.2ms。
+
+**這個取捨的理由是消掉懸崖，不是改善平均值。** 以期望值算，只要有 1.4% 的機率落在 1024–4096 就回本；更重要的是 17ms 的尖峰是 p99 延遲來源，用固定的 0.19ms 換掉划算。沒有走「只在 overflow 時對子集再做一次 topk(4096)」那條路，是因為它只多省 0.19ms 卻要引入升級路徑與額外的 host 同步分支，複雜度不成比例。
+
+### 7.4 正確性
+
+`test/registered/kernels/ops/speculative/` 全過（33 passed、3 skipped、30 subtests），與改動前相同。
+
+另外量了一件測試抓不到的事：nucleus 落在 1024–4096 的列從「遞增排序累加」改走「遞減前綴累加」，fp32 下兩種累加順序在邊界可能給出不同的 pivot。512 列實測：
+
+```
+ scale   nucleus                  path change  tok diff   max |dv|  mass moved
+   3.5      5355                 sort -> sort         1   1.14e-05    1.09e-05
+   4.0      1973            sort -> fast path         7   2.67e-05    2.54e-05
+   5.0       264       fast path -> fast path         0   0.00e+00    0.00e+00
+```
+
+512 列裡差 7 個 token、涉及質量 2.5e-05，與 §6.5 量到的「我們與 AOT 在 top_p < 1.0 最多差 2 個 token」同一量級，屬既有的邊界雜訊而非新引入的問題。
+
+### 7.5 還沒解決的
+
+nucleus > 4096 的列仍走 13.4ms 排序（上表 scale 2、3），對應 top1 < 0.07 的極平分布。真實推論應該不會出現，但**我們沒有真實工作負載的 nucleus 分布數據**，所以無法斷言。要徹底消掉排序得寫 Triton 的 masked-sum 做二分搜尋（§7.1），在有數據證明它會發生之前不值得做。
+
+---
+
+## 8. 尚未處理的技術債
 
 **兩次 topk 可以合併成一次。** sampler 是先 `top_k_renorm` 再 `top_p_renorm`，各自做一次選擇。但 top_k 只是把部分項歸零再等比縮放，所以 top_p 的 pivot 可以從同一個排序前綴推導。合併後約再 1.6x，但需新增 `top_k_top_p_renorm_probs` 進入點並改呼叫端，動到公開 API。
 
@@ -523,6 +594,7 @@ docker exec --user root -e PYTHONPATH=/home/jacchang/PR/sglang/python \
 |---|---|
 | `bench_tree_sampling.py` | 真實樹拓樸下的 tree kernel，AOT 可用時自動對照 |
 | `bench_renorm_aot.py` | renorm 三方對照（torch / Triton / AOT）與 support 等價性 |
+| `bench_renorm_sweep.py` | renorm 成本對分布尖銳度的曲線，附 overflow 比例 |
 
 以下是當初探索用的一次性腳本，只留在 `/home/jacchang/`，沒有進 repo：
 

@@ -127,7 +127,7 @@ def main() -> None:
         pr = timeit(lambda: top_p_renorm_probs_triton(probs, top_ps), args.iters)
 
         row = (
-            f"{scale:>6.0f} {top1:>7.3f} {nucleus:>8} {ovf:>6.0%} "
+            f"{scale:>6.1f} {top1:>7.3f} {nucleus:>8} {ovf:>6.0%} "
             f"{kt:>8.3f} {kr:>9.3f} {pt:>8.3f} {pr:>9.3f}"
         )
         if aot is not None:
