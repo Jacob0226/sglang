@@ -31,6 +31,18 @@ register_kernel(
 register_kernel(
     KernelSpec(
         op="sampling.top_k_renorm_probs",
+        backend=KernelBackend.TRITON,
+        target="sglang.kernels.ops.sampling.renorm_triton:top_k_renorm_probs_triton",
+        capabilities=frozenset((CapabilityRequirement.HIP,)),
+        format_signature=FormatSignature(
+            supported_dtypes=("float32",),
+            description="threshold-based top-k probability renormalization",
+        ),
+    )
+)
+register_kernel(
+    KernelSpec(
+        op="sampling.top_k_renorm_probs",
         backend=KernelBackend.TORCH,
         target="sglang.kernels.ops.sampling.renorm:top_k_renorm_probs_torch",
         capabilities=frozenset(
@@ -61,6 +73,18 @@ register_kernel(
 register_kernel(
     KernelSpec(
         op="sampling.top_p_renorm_probs",
+        backend=KernelBackend.TRITON,
+        target="sglang.kernels.ops.sampling.renorm_triton:top_p_renorm_probs_triton",
+        capabilities=frozenset((CapabilityRequirement.HIP,)),
+        format_signature=FormatSignature(
+            supported_dtypes=("float32",),
+            description="threshold-based nucleus probability renormalization",
+        ),
+    )
+)
+register_kernel(
+    KernelSpec(
+        op="sampling.top_p_renorm_probs",
         backend=KernelBackend.TORCH,
         target="sglang.kernels.ops.sampling.renorm:top_p_renorm_probs_torch",
         capabilities=frozenset(
@@ -83,6 +107,8 @@ def _renorm_backend(probs: torch.Tensor) -> KernelBackend:
         return KernelBackend.AOT
     if probs.device.type == "musa":
         return KernelBackend.AOT
+    if probs.device.type == "cuda":
+        return KernelBackend.TRITON
     return KernelBackend.TORCH
 
 
