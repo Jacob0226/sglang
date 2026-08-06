@@ -21,7 +21,12 @@ import torch
 # Nucleus size beyond which top-p falls back to a full sort. Real decode
 # distributions need a handful of entries; flat ones (high temperature, early
 # generation) can need far more, so the fallback must stay correct, not fast.
-_TOP_P_PREFIX = 1024
+#
+# Sized against the selection cost rather than the expected nucleus: on a 151936
+# vocabulary topk is flat from 1024 to 4096 (1.84ms to 1.92ms over 1536 rows) and
+# only starts paying beyond that (2.78ms at 8192). Widening the prefix to the end
+# of that plateau is close to free and keeps rows off the 13.4ms sort.
+_TOP_P_PREFIX = 4096
 
 
 def per_row_threshold(
