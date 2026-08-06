@@ -31,16 +31,27 @@ DEV = torch.device("cuda")
 
 def load_aot():
     """The wrapper imports fine on ROCm; only the torch op is missing, so probe
-    with a real call rather than trusting the import."""
+    with a real call rather than trusting the import. Wheels older than the
+    in-tree rename only export the singular spelling."""
+    import sgl_kernel
+
+    def pick(*names):
+        for name in names:
+            fn = getattr(sgl_kernel, name, None)
+            if fn is not None:
+                return fn
+        raise AttributeError(names[0])
+
     try:
-        from sgl_kernel import top_k_renorm_probs, top_p_renorm_probs
+        aot_k = pick("top_k_renorm_probs", "top_k_renorm_prob")
+        aot_p = pick("top_p_renorm_probs", "top_p_renorm_prob")
 
         probs = torch.softmax(torch.randn(2, 128, device=DEV), dim=-1)
-        top_k_renorm_probs(probs, torch.full((2,), 8, dtype=torch.int64, device=DEV))
-        top_p_renorm_probs(probs, torch.full((2,), 0.9, device=DEV))
+        aot_k(probs, torch.full((2,), 8, dtype=torch.int64, device=DEV))
+        aot_p(probs, torch.full((2,), 0.9, device=DEV))
     except Exception:
         return None
-    return top_k_renorm_probs, top_p_renorm_probs
+    return aot_k, aot_p
 
 
 def make_probs(shape: str, rows: int, vocab: int) -> torch.Tensor:
