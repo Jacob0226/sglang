@@ -186,6 +186,8 @@ CUDA 版就只是一份 `speculative_sampling.cuh`，很自然會問：ROCm 直�
 
 三者的共同點：**都需要 CUDA AOT kernel 當比較基準，只能在 NVIDIA 機器上啟用**。這意味著「Triton port 與 CUDA 等價」這件事目前**在 ROCm 上無法自證**。
 
+> 後續：這三支已在 B200 上實際執行並通過（`36 passed, skipped 0`），見 §6.5。
+
 ---
 
 ## 5. 要與 NVIDIA 的 tree 比較，還差什麼
@@ -234,15 +236,15 @@ Max 自己在 plan §5 訂的合併門檻：
 
 ### 小結：跨平台比較的前置條件
 
-| # | 缺什麼 | 需要的硬體 | 產出 |
-|---|---|---|---|
-| 1 | 等價性證明 | NVIDIA | 3 個 skipped 測試轉為通過 |
-| 2 | kernel 效能對照 | NVIDIA | Triton vs CUDA AOT microbenchmark |
-| 3 | 真實樹拓撲的耗時 | 兩者 | 取代目前的 chain 佔位量測 |
-| 4 | e2e 準確度 | ROCm | topk>1 對上 no-speculator 的分布 |
-| 5 | accept length | 兩者 | 同 workload 的接受長度對照 |
+| # | 缺什麼 | 需要的硬體 | 產出 | 狀態 |
+|---|---|---|---|---|
+| 1 | 等價性證明 | NVIDIA | 3 個 skipped 測試轉為通過 | **已完成**（§6.5） |
+| 2 | kernel 效能對照 | NVIDIA | Triton vs CUDA AOT microbenchmark | **已完成**（§6.5） |
+| 3 | 真實樹拓撲的耗時 | 兩者 | 取代目前的 chain 佔位量測 | **已完成**（§6.5） |
+| 4 | e2e 準確度 | ROCm | topk>1 對上 no-speculator 的分布 | 未做 |
+| 5 | accept length | 兩者 | 同 workload 的接受長度對照 | 未做 |
 
-第 1、2 項的瓶頸單純是**沒有 NVIDIA 機器跑這個分支**。第 4、5 項則是本地就能做的 —— 手上有 MI355X 和客戶的 GLM-5.2-FP8 workload，而這正好是 Max 缺的部分（他 plan 裡的路徑是 `/home/macui/...`，且該 todo 被他自己取消）。
+第 1、2 項的瓶頸單純是**沒有 NVIDIA 機器跑這個分支**，2026-08-06 在 B200 上補完。第 4、5 項則是本地就能做的 —— 手上有 MI355X 和客戶的 GLM-5.2-FP8 workload，而這正好是 Max 缺的部分（他 plan 裡的路徑是 `/home/macui/...`，且該 todo 被他自己取消）。
 
 ---
 
@@ -314,6 +316,105 @@ AOT 可用時會自動多出 `aot(ms)` 與 `triton/aot` 兩欄。這支用的是
 
 第 3、4、5 項在 MI355X 上都量不到，因為那裡根本沒有 AOT kernel 可當基準。
 
+### 6.5 執行結果（B200 × 8，CUDA 13.0，torch 2.11.0，sgl_kernel 0.4.5，2026-08-06）
+
+容器 `jacchang_GLM`（`lmsysorg/sglang:v0.5.16-cu130-runtime`）。量測期間 8 張卡都空閒、無其他 process。
+
+**環境上唯一的意外**：`bench_renorm_aot.py` 的 AOT 探測失敗，但不是缺 kernel，是**命名版本落差**。in-tree wrapper 已改名為複數 `top_k_renorm_probs`，而容器裡的 wheel（0.4.5）只匯出單數 `top_k_renorm_prob`；底層 op `torch.ops.sgl_kernel.top_k_renorm_probs` 兩者都是複數。探測已改成兩種拼法都試。這正好是 §6.0 那句「探測失敗會自動降級」的反面教材 —— 降級太安靜，會把版本落差誤報成硬體不支援。
+
+#### §6.1 的結果 — 等價性：三個測試全過
+
+```
+36 passed, 41 subtests passed   (skipped 0)
+```
+
+`test_matches_cuda_aot_oracle`、`test_top_k_fallback_matches_kernel`、`test_top_p_fallback_matches_kernel` 全數實際執行並通過。**前置條件 1 成立：Triton tree kernel 與 CUDA AOT 等價。**
+
+#### §6.2 的結果（一）— renorm 等價性：top_k 完全相同，top_p 只在 `top_p=1.0` 分歧
+
+腳本的 `worst support mismatch: 0` 判準**沒過**（報 2671270）。但拆開看方向與質量後，結論與 §6.2 預期的「解讀有誤」相反：
+
+| 類別 | support 差異 | 最大 TV | 判讀 |
+|---|---|---|---|
+| top_k（5 形狀 × 4 個 k，共 20 組） | **全部 0** | 3.1e-07 | 閾值語意與 flashinfer 逐位元一致 |
+| top_p < 1.0 | 最多 **2** token（總量 9.7M） | 3.9e-04 | 恰好落在截斷點的並列，單 token 等級 |
+| top_p = 1.0 | 最多 3493103 | **2.2e-07** | 見下 |
+
+`top_p=1.0` 的差異方向是關鍵：**AOT 保留的 token 比我們少**。peaked 分布單列 151936 個 token，AOT 留 137616，我們留 150612 —— flashinfer 自己在 `top_p=1.0` 砍掉了尾巴，正是 §2.3 那個 fp32 陷阱（該列實際總和 1.000000119）。被砍掉那 13000 個 token 的總質量在 1e-7 量級，所以 TV 距離反而是全表最小的。
+
+**所以不需要照 §6.2 預案裡「以 AOT 為準回頭修 `renorm.py`」那條路走。** 我們的行為比 AOT 更正確；`top_p=1.0` 應該是 no-op，而 AOT 不是。也因為移動的質量微不足道，pytest 那兩支以分布距離（TV < 1e-2）比較的測試才會通過，而逐位元的 support 判準會失敗。這說明**判準本身該修**：support 相同適用於 top_k 與 top_p < 1，`top_p=1.0` 只能用 TV 判。
+
+#### §6.2 的結果（二）— renorm 成本：瓶頸不是 Triton，是 overflow 退路
+
+vocab=151936，1536 rows：
+
+```
+   op    torch(ms)  triton(ms)  aot(ms)  triton/aot
+ top_k       5.434       3.086    1.323       2.33x
+ top_p      20.129      17.778    3.447       5.16x
+```
+
+top_p 那個 5.16x 具誤導性，因為它量的是 overflow 退路而不是 kernel。`top_p_pivots` 只用 `torch.topk(probs, 1024)` 找 pivot；門檻落在 1024 名以外時，前綴看不到答案，只能退回對全部 151936 個 token 做完整 `torch.sort`（12.8ms）。而 benchmark 用的 `softmax(randn)` 在 151936 vocab 下近乎均勻（`top1 ≈ 0.0003`），要湊到 `top_p=0.95` 得收集約 13 萬個 token —— **每一列都走了退路**。17.78ms = 12.8ms 的 sort + 3.4ms 的實際工作。
+
+那種 `top1 ≈ 0` 的分布在真實推論裡不存在。把 logit 乘上 scale 掃過尖銳度（1536 rows，iters=100，每個 AOT 點取 3 次試驗的最小值；三次都落在 0.01ms 內）：
+
+```
+ scale    top1  nucleus  aot(ms)  triton(ms)   winner   ratio
+     1   0.000     1024    3.448      17.771      aot    5.15x
+     2   0.008     1024    2.705      17.893      aot    6.61x
+     4   0.197      975    2.201      16.542      aot    7.52x
+     6   0.454       62    2.060       3.403      aot    1.65x
+     8   0.580       12    1.983       3.402      aot    1.72x
+    12   0.738        3    1.952       3.403      aot    1.75x
+    16   0.804        2    3.940       3.401   triton    1.16x
+    24   0.869        1    6.543       3.401   triton    1.92x
+    32   0.901        1    4.880       3.401   triton    1.43x
+```
+
+兩件事：
+
+1. **Triton 是水平線（3.40ms），成本與資料無關** —— `topk(1024)` 加上兩趟固定的 vocab 掃描，不管分布長什麼樣都一樣。overflow 一消失（scale ≥ 6）就再也不動。
+2. **AOT 是 U 形曲線（1.95–6.54ms），成本與資料相關。** 分布越尖它反而越慢：scale 12 是 1.95ms，scale 24 到 6.54ms。這符合 pivot 多輪縮減的性質 —— top-1 佔 0.87、其餘極小時，要收斂到精確門檻需要更多輪。§2.3 說 flashinfer「用 pivot 多輪縮減，從不排序」，代價就是輪數隨分布變動。
+
+所以交叉點在 `nucleus ≤ 2` / `top1 ≥ 0.80` 附近：比這平，AOT 快 1.65–7.5x；比這尖，Triton 快 1.16–1.92x。**整體而言 AOT 仍然較快，但不是全面較快，而那個最大的 5–7.5x 差距來自 `torch.sort` 退路，不是 Triton kernel。**
+
+pivot 搜尋佔多少，完全看在哪個 regime。B200 上 `torch.topk(probs, 1024)` 是 2.69ms（1536 rows）：在 overflow regime 只佔 top_p 總時間的 15%，但在 fast path（3.40ms）佔了約 79%。**所以 §7 那個「兩次 topk 合併成一次」的技術債在真實分布下是有價值的** —— 那裡 topk 就是主要成本，§7 估的約 1.6x 站得住；只有在 flat 分布下它才被 `torch.sort` 蓋掉。
+
+另外有一個待查的落差：同一份 Triton 程式在 B200 上是 20.9ms（top_k 3.09 + top_p 17.78），而 §2.3 在 MI355X 上記的是 5.0ms。兩邊都用 `softmax(randn)`，若 MI355X 當時也是每列 overflow，那 MI355X 的 `torch.sort` 得比 B200 快 6 倍才對得上，這不太合理；比較可能是 §2.3 的量測其實沒有觸發 overflow（該節寫「nucleus 超出前綴長度的**少數** row 才退回完整排序」，正暗示作者當時觀察到的 overflow 比例很低，而 B200 上是 100%）。需要在 MI355X 上重跑同一支腳本並印出 overflow 比例才能定論。**在釐清之前，§2.3 那個 5.0ms 不該當成與 B200 的 17.78ms 可直接比較的數字。**
+
+#### §6.3 的結果 — tree kernel：真實 k-ary 樹拓樸下 1.1–1.2x
+
+`--logit-scale 16 --iters 20`，摘 ndt=8 的兩端（ndt=16 的數字幾乎相同）：
+
+```
+   bs  ndt  width  depth  triton(ms)   aot(ms)  triton/aot  accept_len
+    1    8      2      4      0.1072    0.0402       2.67x        0.00
+    8    8      2      4      0.1372    0.0765       1.79x        1.25
+   32    8      2      4      0.1654    0.0919       1.80x        1.47
+  128    8      2      4      0.2080    0.1148       1.81x        1.10
+  256    8      2      4      0.2228    0.1888       1.18x        1.20
+```
+
+**Triton/AOT 在 bs=1 是 2.0–2.7x，隨 batch 收斂到 bs=256 的 1.12–1.19x。** 絕對差距在 serving batch 下是 0.03ms。accept_len 落在 0.88–2.25，證實 scale 16 的校準在 B200 上同樣有效（bs=1 那列的 0.00 是 n=1 的取樣雜訊，不是失敗）。這同時補掉前置條件 3：真實樹拓樸取代了 §5.2 的 chain 佔位。
+
+#### 結論：hipify 不值得做
+
+§2.4 說「目前沒有 AOT renorm 的基準數字，所以那 5.0ms 距離原生實作還差多少是未知的」。現在知道了：
+
+| | 誰快 | 倍數 | 判讀 |
+|---|---|---|---|
+| tree kernel（bs=256） | AOT | 1.12–1.19x | 移植只能省 0.03ms，不值得 |
+| top_k renorm | AOT | 2.33x | 差距在 `topk`，不在 apply |
+| top_p renorm，nucleus > 1024 | AOT | 5.2–7.5x | 差距在 `torch.sort` 退路，hipify 幫不上 |
+| top_p renorm，nucleus 3–62 | AOT | 1.65–1.75x | 絕對差 1.4ms |
+| top_p renorm，nucleus ≤ 2 | **Triton** | 1.16–1.92x | AOT 的多輪縮減在此變慢 |
+
+原本 §2.4 的推論是「hipify 幫得上忙的恰好不是瓶頸」。B200 的數據把結論推得更遠：**兩顆都不值得 hipify。** tree kernel 移植的上限是 0.03ms；renorm 最大的那筆差距是 `torch.sort` 退路，而它是 torch 層的問題，兩個平台共通，與 CUDA/ROCm 無關。真正值得做的優化是讓 pivot 搜尋不要 overflow（例如前綴不足時改用二分搜尋門檻值，而非完整排序），那在兩個平台上都會贏。
+
+#### 剩下的缺口
+
+前置條件 1、2、3 已結案。4（e2e 準確度）、5（accept length 對照）仍未做，兩者都需要跑真實 model 而非 microbenchmark。
+
 ---
 
 ## 7. 尚未處理的技術債
@@ -353,5 +454,8 @@ docker exec --user root -e PYTHONPATH=/home/jacchang/PR/sglang/python \
 | `bench_escalation.py` | 自適應 K（已證實為死路） |
 | `bench_tree_warps.py` | `num_warps` / `BLOCK_V` 調參（結論：BLOCK_V 才有影響） |
 | `verify_renorm_triton.py` | 融合 Triton 路徑的完整驗證 |
+| `diag_renorm_aot_mismatch.py` | §6.5 用：拆解 support 差異的方向與質量 |
+| `diag_renorm_attribution.py` | §6.5 用：把 renorm 成本歸因到 pivot 搜尋與 overflow 退路 |
+| `diag_aot_scale_sweep.py` | §6.5 用：AOT 對分布尖銳度的 U 形曲線（確認非雜訊）|
 
 跑完記得 `sudo chown -R jacchang:jacchang .`，容器以 root 執行會在 repo 留下 root 檔案。
