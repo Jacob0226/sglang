@@ -42,7 +42,7 @@ register_kernel(
         ),
         format_signature=FormatSignature(
             supported_dtypes=("float32",),
-            description="portable rank-based top-k probability renormalization",
+            description="portable threshold-based top-k probability renormalization",
         ),
     )
 )
