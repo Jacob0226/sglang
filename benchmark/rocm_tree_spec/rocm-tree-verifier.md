@@ -340,7 +340,21 @@ AOT 可用時會自動多出 `aot(ms)` 與 `triton/aot` 兩欄。這支用的是
 | top_p < 1.0 | 最多 **2** token（總量 9.7M） | 3.9e-04 | 恰好落在截斷點的並列，單 token 等級 |
 | top_p = 1.0 | 最多 3493103 | **2.2e-07** | 見下 |
 
-`top_p=1.0` 的差異方向是關鍵：**AOT 保留的 token 比我們少**。peaked 分布單列 151936 個 token，AOT 留 137616，我們留 150612 —— flashinfer 自己在 `top_p=1.0` 砍掉了尾巴，正是 §2.3 那個 fp32 陷阱（該列實際總和 1.000000119）。被砍掉那 13000 個 token 的總質量在 1e-7 量級，所以 TV 距離反而是全表最小的。
+`top_p=1.0` 的差異方向才是關鍵。`support mismatch` 是 XOR 計數，只說有幾個 token 不一致，不說是誰丟的；拆成「只有 AOT 留」與「只有我們留」兩欄後（peaked，64 列）：
+
+```
+row  in_nonzero  keep_aot  keep_ours  aot_only  ours_only  pivot
+  0      149998    132917     149998         0      17081  0.000e+00
+  3      133177         4     133177         0     133173  0.000e+00
+  7      150611    137594     150611         0      13017  0.000e+00
+
+rows where AOT keeps fewer than we do: 63/64
+rows where pivot > 0 (not a true no-op): 1/64
+```
+
+**63 列裡我們的 pivot 解出來是 0（真正的 no-op，保留全部非零 token），而 AOT 砍掉了尾巴** —— row 3 最極端，輸入有 133177 個非零 token，AOT 只留 4 個。這正是 §2.3 那個 fp32 陷阱：flashinfer 拿 cumsum 跟 `top_p` 比，而該列實際總和是 1.000000119，尖銳分布下前幾項就湊到 1.0，尾巴整條丟掉。我們改以該列實際總和為基準算捨棄質量（`prefix <= total − (1 − top_p)`），`top_p=1.0` 時右邊就是 `total − 0`，所以是真 no-op。
+
+剩下那 1 列方向相反（我們的 pivot > 0，丟掉了 AOT 留的東西），它就是上表 `top_p = 1.0` 那格裡 `aot_only` 部分的來源。兩個方向涉及的質量都微不足道：AOT 留而我們丟的最大單一機率是 2.86e-08，每列獨有的總質量 ≤ 1.5e-07。所以 support 差了幾百萬個 token，TV 距離卻只有 2.2e-07 —— 全表最小。
 
 **所以不需要照 §6.2 預案裡「以 AOT 為準回頭修 `renorm.py`」那條路走。** 我們的行為比 AOT 更正確；`top_p=1.0` 應該是 no-op，而 AOT 不是。也因為移動的質量微不足道，pytest 那兩支以分布距離（TV < 1e-2）比較的測試才會通過，而逐位元的 support 判準會失敗。這說明**判準本身該修**：support 相同適用於 top_k 與 top_p < 1，`top_p=1.0` 只能用 TV 判。
 
@@ -457,5 +471,6 @@ docker exec --user root -e PYTHONPATH=/home/jacchang/PR/sglang/python \
 | `diag_renorm_aot_mismatch.py` | §6.5 用：拆解 support 差異的方向與質量 |
 | `diag_renorm_attribution.py` | §6.5 用：把 renorm 成本歸因到 pivot 搜尋與 overflow 退路 |
 | `diag_aot_scale_sweep.py` | §6.5 用：AOT 對分布尖銳度的 U 形曲線（確認非雜訊）|
+| `diag_top_p_one_direction.py` | §6.5 用：`top_p=1.0` 逐列拆解誰丟掉哪些 token |
 
 跑完記得 `sudo chown -R jacchang:jacchang .`，容器以 root 執行會在 repo 留下 root 檔案。
