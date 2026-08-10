@@ -645,11 +645,17 @@ class Indexer(MultiPlatformOp):
         if cached is None or cached[0].dtype != dtype:
             rope = self.rotary_emb
             if hasattr(rope, "cos_cache") and hasattr(rope, "sin_cache"):
-                cos, sin = rope.cos_cache, rope.sin_cache
+                # aiter keeps them broadcast-shaped, [max_pos, 1, 1, rope_dim/2].
+                cos = rope.cos_cache.reshape(rope.cos_cache.shape[0], -1)
+                sin = rope.sin_cache.reshape(rope.sin_cache.shape[0], -1)
             else:
                 cache = self._indexer_cos_sin_cache
                 half = cache.shape[-1] // 2
                 cos, sin = cache[..., :half], cache[..., half:]
+            assert cos.shape[-1] == self.rope_head_dim // 2, (
+                f"indexer rope cache is {tuple(cos.shape)}, expected a trailing "
+                f"{self.rope_head_dim // 2}"
+            )
             cached = (cos.to(dtype).contiguous(), sin.to(dtype).contiguous())
             self._cos_sin_halves_cache = cached
         return cached
