@@ -85,6 +85,11 @@ _is_gfx95_supported = is_gfx95_supported()
 # Opt-in: fuse the indexer query's hadamard (rotate_activation) + fp8 act_quant
 # into one Triton kernel (gfx950). Enable with SGLANG_DSA_FUSE_HADAMARD_QUANT=1.
 _DSA_FUSE_HADAMARD_QUANT = get_bool_env_var("SGLANG_DSA_FUSE_HADAMARD_QUANT")
+# Opt-in: route the whole ROCm indexer q/k preparation through aiter's single
+# fused kernel (k LayerNorm + RoPE + fp8 quant + paged store, q RoPE + fp8 quant,
+# head-gate scale). Like the CUDA fused path it drops the Hadamard rotation, so
+# it supersedes SGLANG_DSA_FUSE_HADAMARD_QUANT when both are set.
+_DSA_AITER_INDEXER_FUSION = get_bool_env_var("SGLANG_DSA_AITER_INDEXER_FUSION")
 # Whether the aiter preshuffle paged-MQA path (page_size=64 + Preshuffle=True +
 # KVBlockSize=64) can be used. Falls back to the legacy page_size=1 / KVBlockSize=1
 # path when the gluon kernel is unavailable (Triton<3.5 and no AOT bundle).
@@ -103,6 +108,13 @@ if _is_cuda:
 
 if _use_aiter:
     from aiter.ops.cache import indexer_k_quant_and_cache
+
+    try:
+        from aiter.ops.cache import indexer_qk_rope_quant_and_cache
+    except ImportError:
+        indexer_qk_rope_quant_and_cache = None
+else:
+    indexer_qk_rope_quant_and_cache = None
 
 if is_npu():
     import torch_npu
@@ -131,6 +143,13 @@ _use_ag_after_qlora = envs.SGLANG_USE_AG_AFTER_QLORA.get()
 if TYPE_CHECKING:
     from sglang.srt.mem_cache.memory_pool import DSATokenToKVPool
 
+
+# Mirrors Indexer.merge_wk_weights_proj for callers that must answer "is
+# weights_proj folded away?" before any Indexer exists (LoRA target validation).
+# is_neox_style is per-model and unknown here, so this errs towards "fused".
+_use_dsa_indexer_fusion = (_is_cuda or _is_hip) and not get_bool_env_var(
+    "SGLANG_DISABLE_DSA_INDEXER_FUSION"
+)
 
 DUAL_STREAM_TOKEN_THRESHOLD = 1024 if _is_cuda else 0
 GRAPH_WEIGHTS_PROJ_LORA_ERROR = (
@@ -393,11 +412,15 @@ class Indexer(MultiPlatformOp):
         self.index_topk = index_topk
         self.q_lora_rank = q_lora_rank
         self.layer_id = layer_id
-        self.use_dsa_indexer_fusion = (
-            _is_cuda
-            and not envs.SGLANG_DISABLE_DSA_INDEXER_FUSION.get()
-            and not is_neox_style
+        _indexer_fusion_enabled = (
+            not envs.SGLANG_DISABLE_DSA_INDEXER_FUSION.get() and not is_neox_style
         )
+        # CUDA-only: the fused_q_indexer_rope_first_quant /
+        # fused_k_indexer_norm_rope_store kernels.
+        self.use_dsa_indexer_fusion = _is_cuda and _indexer_fusion_enabled
+        # Folding wk and weights_proj into one GEMM needs no fused kernel, so
+        # ROCm takes it as well. Numerically identical to the split projections.
+        self.merge_wk_weights_proj = (_is_cuda or _is_hip) and _indexer_fusion_enabled
         self.alt_stream = alt_stream
         self.dsa_enable_prefill_cp = is_dsa_enable_prefill_cp()
         if self.dsa_enable_prefill_cp:
@@ -422,7 +445,7 @@ class Indexer(MultiPlatformOp):
             prefix=add_prefix("wq_b", prefix),
         )
 
-        if self.use_dsa_indexer_fusion:
+        if self.merge_wk_weights_proj:
             self.wk_weights_proj = ReplicatedLinear(
                 self.hidden_size,
                 self.head_dim + self.n_heads,
@@ -466,8 +489,22 @@ class Indexer(MultiPlatformOp):
         self.block_size = block_size
         # Fuse the query hadamard + fp8 quant when opted in, on gfx950, and the
         # shape is a single quant group (head_dim == block_size, power of 2).
+        # aiter's fused indexer kernel is fixed at head_dim=128 / rope_dim=64 and
+        # quantizes one group per head, and it applies LayerNorm (not RMSNorm) to k.
+        self.use_aiter_indexer_fusion = (
+            _DSA_AITER_INDEXER_FUSION
+            and self.merge_wk_weights_proj
+            and _use_aiter
+            and _is_gfx95_supported
+            and indexer_qk_rope_quant_and_cache is not None
+            and isinstance(self.k_norm, LayerNorm)
+            and self.head_dim == 128
+            and self.rope_head_dim == 64
+            and self.block_size == self.head_dim
+        )
         self.fuse_hadamard_quant = (
             _DSA_FUSE_HADAMARD_QUANT
+            and not self.use_aiter_indexer_fusion
             and _is_hip
             and _is_gfx95_supported
             and self.head_dim == self.block_size
@@ -580,7 +617,35 @@ class Indexer(MultiPlatformOp):
     def _maybe_rotate(self, x: torch.Tensor) -> torch.Tensor:
         # Fusion drops the (logit-preserving) Hadamard rotation; without it the
         # index-K cache here matches the fused path that decode reads back.
-        return x if self.use_dsa_indexer_fusion else rotate_activation(x)
+        if self.use_dsa_indexer_fusion or self.use_aiter_indexer_fusion:
+            return x
+        return rotate_activation(x)
+
+    def _k_norm_params(self, dtype: torch.dtype) -> Tuple[torch.Tensor, torch.Tensor]:
+        # aiter's fused kernel requires the LayerNorm params in the query dtype
+        # and contiguous. Built on first use: weights load after construction.
+        cached = getattr(self, "_k_norm_params_cache", None)
+        if cached is None or cached[0].dtype != dtype:
+            cached = (
+                self.k_norm.weight.detach().to(dtype).contiguous(),
+                self.k_norm.bias.detach().to(dtype).contiguous(),
+            )
+            self._k_norm_params_cache = cached
+        return cached
+
+    def _indexer_cos_sin_halves(self, dtype: torch.dtype):
+        # cos_sin_cache is [max_pos, rope_dim] = cat(cos, sin); aiter wants the
+        # two halves separately, in the query dtype.
+        cached = getattr(self, "_cos_sin_halves_cache", None)
+        if cached is None or cached[0].dtype != dtype:
+            cache = self._indexer_cos_sin_cache
+            half = cache.shape[-1] // 2
+            cached = (
+                cache[..., :half].to(dtype).contiguous(),
+                cache[..., half:].to(dtype).contiguous(),
+            )
+            self._cos_sin_halves_cache = cached
+        return cached
 
     def _should_skip_logits_computation(self, forward_batch: ForwardBatch) -> bool:
         # When kv_len <= index_topk the top-k selects ALL valid positions, so the
@@ -664,7 +729,7 @@ class Indexer(MultiPlatformOp):
                 )
             with torch.cuda.stream(self.alt_stream):
                 # TODO we should also put DeepGEMM half SM here?
-                if self.use_dsa_indexer_fusion:
+                if self.merge_wk_weights_proj:
                     key, weights_raw = self._fused_k_weights(x)
                 else:
                     key, _ = self.wk(x)
@@ -683,7 +748,7 @@ class Indexer(MultiPlatformOp):
             q_rope, _ = torch.split(
                 query, [self.rope_head_dim, self.head_dim - self.rope_head_dim], dim=-1
             )
-            if self.use_dsa_indexer_fusion:
+            if self.merge_wk_weights_proj:
                 key, weights_raw = self._fused_k_weights(x)
             else:
                 key, _ = self.wk(x)
@@ -747,8 +812,10 @@ class Indexer(MultiPlatformOp):
         positions: torch.Tensor,
         enable_dual_stream: bool,
     ):
-        # Non-fusion path only; self.wk does not exist when fusion is on.
-        key, _ = self.wk(x)
+        if self.merge_wk_weights_proj:
+            key, _ = self._fused_k_weights(x)
+        else:
+            key, _ = self.wk(x)
         key = self.k_norm(key)
         k_rope, _ = torch.split(
             key, [self.rope_head_dim, self.head_dim - self.rope_head_dim], dim=-1
@@ -756,7 +823,7 @@ class Indexer(MultiPlatformOp):
 
         _, k_rope = self.rotary_emb(positions, k_rope, k_rope)
         self._update_rope_guarded(key[..., : self.rope_head_dim], k_rope)
-        key = rotate_activation(key)
+        key = self._maybe_rotate(key)
 
         return key
 
@@ -895,6 +962,74 @@ class Indexer(MultiPlatformOp):
 
         current_stream.wait_stream(self.alt_stream)
         return q_fp8, weights
+
+    @staticmethod
+    def _index_k_layer_owned(layer_id: int) -> bool:
+        # Under a layer-split DSA cache a rank only writes the layers it owns.
+        pool = get_token_to_kv_pool()
+        return not hasattr(pool, "_is_layer_owned") or pool._is_layer_owned(layer_id)
+
+    def _aiter_fused_qk_prepare_and_store(
+        self,
+        x: torch.Tensor,
+        q_lora: torch.Tensor,
+        positions: torch.Tensor,
+        forward_batch: ForwardBatch,
+        layer_id: int,
+        *,
+        num_tokens: Optional[int] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """ROCm counterpart of _fused_q_prepare_and_store: one aiter kernel does
+        k LayerNorm + RoPE + fp8 quant + paged index-k store, q RoPE + fp8 quant,
+        and the head-gate scale. num_tokens slices to the unpadded count."""
+        pool = get_token_to_kv_pool()
+        if hasattr(pool, "invalidate_index_buffer_for_layer"):
+            pool.invalidate_index_buffer_for_layer(layer_id)
+
+        out_cache_loc = forward_batch.out_cache_loc
+        if num_tokens is not None:
+            positions = positions[:num_tokens]
+            out_cache_loc = out_cache_loc[:num_tokens]
+        if not out_cache_loc.is_contiguous():
+            out_cache_loc = out_cache_loc.contiguous()
+
+        kw, _ = self.wk_weights_proj(x)
+        key, weights_raw = kw.split([self.head_dim, self.n_heads], dim=-1)
+        query = self.wq_b(q_lora)[0].view(-1, self.n_heads, self.head_dim)
+        if num_tokens is not None:
+            key = key[:num_tokens]
+            weights_raw = weights_raw[:num_tokens]
+            query = query[:num_tokens]
+
+        q_fp8 = torch.empty(query.shape, dtype=fp8_dtype, device=query.device)
+        weights = torch.empty(
+            weights_raw.shape, dtype=torch.float32, device=query.device
+        )
+        cos_cache, sin_cache = self._indexer_cos_sin_halves(query.dtype)
+        norm_weight, norm_bias = self._k_norm_params(query.dtype)
+        page_size = pool.page_size
+        kv_cache = pool.get_index_k_with_scale_buffer(layer_id=layer_id)
+        indexer_qk_rope_quant_and_cache(
+            query,
+            q_fp8,
+            weights_raw,
+            weights,
+            key,
+            kv_cache.view(-1, page_size, 132).view(fp8_dtype),
+            out_cache_loc,
+            norm_weight,
+            norm_bias,
+            positions,
+            cos_cache,
+            sin_cache,
+            self.k_norm.variance_epsilon,
+            self.block_size,
+            self.scale_fmt or "",
+            self.softmax_scale * self.n_heads**-0.5,
+            preshuffle=_use_aiter_preshuffle,
+            is_neox=False,
+        )
+        return q_fp8, weights.unsqueeze(-1)
 
     @staticmethod
     def _update_rope_guarded(dst: torch.Tensor, src: torch.Tensor) -> None:
@@ -1891,11 +2026,20 @@ class Indexer(MultiPlatformOp):
         # wrapper owns base+delta and no LoRA kernel runs under torch.compile.
         # Fusion folds weights_proj into wk_weights_proj, so weights_proj is
         # absent then; short-circuit before touching it.
-        weights_proj_lora = not self.use_dsa_indexer_fusion and getattr(
+        weights_proj_lora = not self.merge_wk_weights_proj and getattr(
             self.weights_proj, "set_lora", False
         )
 
         if (
+            self.use_aiter_indexer_fusion
+            and not in_piecewise_or_breakable_cuda_graph
+            and forward_batch.attn_cp_metadata is None
+            and self._index_k_layer_owned(layer_id)
+        ):
+            q_fp8, weights = self._aiter_fused_qk_prepare_and_store(
+                x, q_lora, positions, forward_batch, layer_id
+            )
+        elif (
             self.use_dsa_indexer_fusion
             and not in_piecewise_or_breakable_cuda_graph
             and forward_batch.attn_cp_metadata is None
@@ -1944,7 +2088,7 @@ class Indexer(MultiPlatformOp):
         elif enable_dual_stream and forward_batch.forward_mode.is_decode_or_idle():
             current_stream = torch.cuda.current_stream()
             self.alt_stream.wait_stream(current_stream)
-            if not self.use_dsa_indexer_fusion:
+            if not self.merge_wk_weights_proj:
                 if weights_proj_lora:
                     weights = self.weights_proj(x)[0].float() * self.n_heads**-0.5
                 else:
@@ -1969,7 +2113,7 @@ class Indexer(MultiPlatformOp):
                     act_quant=act_quant,
                 )
             current_stream.wait_stream(self.alt_stream)
-            if self.use_dsa_indexer_fusion:
+            if self.merge_wk_weights_proj:
                 weights = self._scale_head_gates(weights_raw, q_scale)
             elif not self.fuse_hadamard_quant:
                 weights = self._apply_q_scale_and_softmax_scale(weights, q_scale)
@@ -2048,12 +2192,16 @@ class Indexer(MultiPlatformOp):
                 x_for_gate = x
 
             if in_piecewise_or_breakable_cuda_graph:
-                if self.use_dsa_indexer_fusion:
-                    weights = scale_head_gate_graph(
-                        weights_raw,
-                        self.n_heads**-0.5,
-                        self.softmax_scale,
-                        q_scale,
+                if self.merge_wk_weights_proj:
+                    weights = (
+                        scale_head_gate_graph(
+                            weights_raw,
+                            self.n_heads**-0.5,
+                            self.softmax_scale,
+                            q_scale,
+                        )
+                        if _is_cuda
+                        else self._scale_head_gates(weights_raw, q_scale)
                     )
                 else:
                     if weights_proj_lora:
@@ -2065,7 +2213,7 @@ class Indexer(MultiPlatformOp):
                         self.softmax_scale,
                         q_scale,
                     )
-            elif self.use_dsa_indexer_fusion:
+            elif self.merge_wk_weights_proj:
                 weights = self._scale_head_gates(weights_raw, q_scale)
             elif weights_proj_lora:
                 weights = self.weights_proj(x_for_gate)[0].float() * self.n_heads**-0.5
