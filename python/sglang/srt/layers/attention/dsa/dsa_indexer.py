@@ -638,16 +638,19 @@ class Indexer(MultiPlatformOp):
         return cached
 
     def _indexer_cos_sin_halves(self, dtype: torch.dtype):
-        # cos_sin_cache is [max_pos, rope_dim] = cat(cos, sin); aiter wants the
-        # two halves separately, in the query dtype.
+        # aiter's fused kernel takes cos and sin as separate [max_pos, rope_dim/2]
+        # tensors. aiter's own rope module already stores them that way; the
+        # upstream one keeps a single cat(cos, sin) buffer that has to be split.
         cached = getattr(self, "_cos_sin_halves_cache", None)
         if cached is None or cached[0].dtype != dtype:
-            cache = self._indexer_cos_sin_cache
-            half = cache.shape[-1] // 2
-            cached = (
-                cache[..., :half].to(dtype).contiguous(),
-                cache[..., half:].to(dtype).contiguous(),
-            )
+            rope = self.rotary_emb
+            if hasattr(rope, "cos_cache") and hasattr(rope, "sin_cache"):
+                cos, sin = rope.cos_cache, rope.sin_cache
+            else:
+                cache = self._indexer_cos_sin_cache
+                half = cache.shape[-1] // 2
+                cos, sin = cache[..., :half], cache[..., half:]
+            cached = (cos.to(dtype).contiguous(), sin.to(dtype).contiguous())
             self._cos_sin_halves_cache = cached
         return cached
 
