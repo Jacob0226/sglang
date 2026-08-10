@@ -510,6 +510,10 @@ class Indexer(MultiPlatformOp):
             and self.head_dim == self.block_size
             and (self.head_dim & (self.head_dim - 1)) == 0
         )
+        if self.use_aiter_indexer_fusion and layer_id == 0:
+            logger.info(
+                "DSA indexer: aiter fused q/k kernel enabled (Hadamard dropped)."
+            )
         self.scale_fmt = scale_fmt
         self.softmax_scale = self.head_dim**-0.5
         self.num_init_tokens = self.num_local_tokens = 0
