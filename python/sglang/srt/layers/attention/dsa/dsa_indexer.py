@@ -89,10 +89,6 @@ else:
 _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 _is_fp8_fnuz = is_fp8_fnuz()
 _is_gfx95_supported = is_gfx95_supported()
-# Opt-in: route the whole ROCm indexer q/k preparation through aiter's single
-# fused kernel (k LayerNorm + RoPE + fp8 quant + paged store, q RoPE + fp8 quant,
-# head-gate scale). Like the CUDA fused path it drops the Hadamard rotation.
-_DSA_AITER_INDEXER_FUSION = get_bool_env_var("SGLANG_DSA_AITER_INDEXER_FUSION")
 # Whether the aiter preshuffle paged-MQA path (page_size=64 + Preshuffle=True +
 # KVBlockSize=64) can be used. Falls back to the legacy page_size=1 / KVBlockSize=1
 # path when the gluon kernel is unavailable (Triton<3.5 and no AOT bundle).
@@ -326,11 +322,16 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
             device=get_device().device,
         )
         self.block_size = block_size
-        # aiter's fused indexer kernel is fixed at head_dim=128 / rope_dim=64 and
-        # quantizes one group per head, and it applies LayerNorm (not RMSNorm) to k.
+        # ROCm counterpart of use_dsa_indexer_fusion: route the indexer q/k
+        # preparation through aiter's single fused kernel (k LayerNorm + RoPE +
+        # fp8 quant + paged store, q RoPE + fp8 quant, head-gate scale), which
+        # like the CUDA path drops the Hadamard rotation. The remaining terms are
+        # a capability probe: aiter's kernel is fixed at head_dim=128 /
+        # rope_dim=64, quantizes one group per head, and applies LayerNorm (not
+        # RMSNorm) to k, so anything else falls back to the unfused path.
         self.use_aiter_indexer_fusion = (
-            _DSA_AITER_INDEXER_FUSION
-            and self.merge_wk_weights_proj
+            _is_hip
+            and _indexer_fusion_enabled
             and _use_aiter
             and _is_gfx95_supported
             and indexer_qk_rope_quant_and_cache is not None
