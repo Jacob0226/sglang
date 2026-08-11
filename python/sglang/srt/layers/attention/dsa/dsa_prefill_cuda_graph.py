@@ -157,7 +157,7 @@ def pcg_dsa_indexer_prefill_split(
         )
         return
 
-    query, key, _ = indexer._get_q_k_bf16(
+    query, key, weights_raw = indexer._get_q_k_bf16(
         q_lora,
         x,
         positions,
@@ -165,8 +165,13 @@ def pcg_dsa_indexer_prefill_split(
         forward_batch=forward_batch,
     )
     q_fp8, q_scale = act_quant(query, indexer.block_size, indexer.scale_fmt)
-    # Reuse the compiled head-gate util shared with the eager path.
-    weights = indexer._get_logits_head_gate(x, q_scale)
+    # Reuse the compiled head-gate util shared with the eager path. When wk and
+    # weights_proj are merged (no separate weights_proj module) the gate comes
+    # from the GEMM output above instead.
+    if indexer.merge_wk_weights_proj:
+        weights = indexer._scale_head_gates(weights_raw, q_scale)
+    else:
+        weights = indexer._get_logits_head_gate(x, q_scale)
     # Store K cache + ragged top-k, sliced to the unpadded count and writing into
     # the static padded topk_result buffer (the graph contract). Mirrors the eager
     # path's store + _get_topk_ragged.
