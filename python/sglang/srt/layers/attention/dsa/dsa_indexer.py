@@ -2043,8 +2043,14 @@ class Indexer(MultiPlatformOp):
             self.weights_proj, "set_lora", False
         )
 
+        # aiter's fused kernel is tuned for the one-token-per-sequence decode
+        # shape; at prefill widths it costs about twice the kernels it replaces
+        # (300 vs 163 us/layer at 16k tokens), so prefill keeps the split path.
+        # Hadamard stays off on both sides regardless -- prefill writes the
+        # index-K cache that decode reads back, so the two must agree on basis.
         if (
             self.use_aiter_indexer_fusion
+            and forward_batch.forward_mode.is_decode_or_idle()
             and not in_piecewise_or_breakable_cuda_graph
             and forward_batch.attn_cp_metadata is None
             and self._index_k_layer_owned(layer_id)
