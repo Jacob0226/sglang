@@ -430,14 +430,16 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
             return x
         return rotate_activation(x)
 
-    def _k_norm_params(self, dtype: torch.dtype) -> Tuple[torch.Tensor, torch.Tensor]:
-        # aiter's fused kernel requires the LayerNorm params in the query dtype
-        # and contiguous. Built on first use: weights load after construction.
+    def _k_norm_params(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        # aiter's fused kernel requires the LayerNorm params as contiguous fp32
+        # and rejects anything else at the host check. k_norm itself is bf16
+        # under aiter, so this widens. Built on first use: weights load after
+        # construction.
         cached = getattr(self, "_k_norm_params_cache", None)
-        if cached is None or cached[0].dtype != dtype:
+        if cached is None:
             cached = (
-                self.k_norm.weight.detach().to(dtype).contiguous(),
-                self.k_norm.bias.detach().to(dtype).contiguous(),
+                self.k_norm.weight.detach().float().contiguous(),
+                self.k_norm.bias.detach().float().contiguous(),
             )
             self._k_norm_params_cache = cached
         return cached
@@ -781,7 +783,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
             weights_raw.shape, dtype=torch.float32, device=query.device
         )
         cos_cache, sin_cache = self._indexer_cos_sin_halves(query.dtype)
-        norm_weight, norm_bias = self._k_norm_params(query.dtype)
+        norm_weight, norm_bias = self._k_norm_params()
         page_size = pool.page_size
         kv_cache = pool.get_index_k_with_scale_buffer(layer_id=layer_id)
         indexer_qk_rope_quant_and_cache(
