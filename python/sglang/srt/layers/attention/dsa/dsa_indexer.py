@@ -137,13 +137,6 @@ if TYPE_CHECKING:
     from sglang.srt.mem_cache.memory_pool import DSATokenToKVPool
 
 
-# Mirrors Indexer.merge_wk_weights_proj for callers that must answer "is
-# weights_proj folded away?" before any Indexer exists (LoRA target validation).
-# is_neox_style is per-model and unknown here, so this errs towards "fused".
-_use_dsa_indexer_fusion = (_is_cuda or _is_hip) and not get_bool_env_var(
-    "SGLANG_DISABLE_DSA_INDEXER_FUSION"
-)
-
 DUAL_STREAM_TOKEN_THRESHOLD = 1024 if _is_cuda else 0
 
 
@@ -2001,3 +1994,16 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
             raise NotImplementedError("DSA indexer only supports CUDA, HIP, and NPU")
         topk_result = _broadcast_indexer_topk_from_rank0(topk_result)
         return maybe_capture_indexer_topk(layer_id, topk_result)
+
+
+def indexer_merges_weights_proj(model: torch.nn.Module) -> bool:
+    """Whether the model's DSA indexers folded wk and weights_proj into a single
+    wk_weights_proj param, which removes the modules indexer LoRA would wrap.
+
+    Asks the built indexers rather than re-deriving the condition, so this cannot
+    drift from what the model actually holds.
+    """
+    return any(
+        isinstance(module, Indexer) and module.merge_wk_weights_proj
+        for module in model.modules()
+    )
