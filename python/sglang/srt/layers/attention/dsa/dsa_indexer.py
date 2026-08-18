@@ -137,6 +137,21 @@ if TYPE_CHECKING:
     from sglang.srt.mem_cache.memory_pool import DSATokenToKVPool
 
 
+def aiter_indexer_qk_fusion_available() -> bool:
+    """Whether aiter can run the indexer q/k preparation as one fused kernel.
+
+    Only gfx95 is validated: the kernel itself carries no arch-specific code,
+    but the fp8 format differs (fnuz below gfx950) and nothing downstream of it
+    has been exercised there.
+    """
+    return (
+        _is_hip
+        and _use_aiter
+        and _is_gfx95_supported
+        and indexer_qk_rope_quant_and_cache is not None
+    )
+
+
 DUAL_STREAM_TOKEN_THRESHOLD = 1024 if _is_cuda else 0
 
 
@@ -242,15 +257,43 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
         self.index_topk = index_topk
         self.q_lora_rank = q_lora_rank
         self.layer_id = layer_id
-        _indexer_fusion_enabled = (
-            not envs.SGLANG_DISABLE_DSA_INDEXER_FUSION.get() and not is_neox_style
+        self.block_size = block_size
+        # Built ahead of the projections because the fusion decision below reads
+        # its type: aiter's fused kernel implements LayerNorm only.
+        if (
+            config is not None
+            and getattr(config, "index_k_norm_type", "layer") == "rms"
+        ):
+            self.k_norm = RMSNorm(self.head_dim)
+        else:
+            self.k_norm = LayerNorm(
+                self.head_dim, dtype=torch.bfloat16 if _use_aiter else torch.float32
+            )
+        # One switch for the whole fused indexer q/k path: wk and weights_proj
+        # collapse into a single GEMM, the Hadamard rotation is dropped (indexer
+        # scores are invariant to it), and q/k preparation goes through the
+        # platform's fused kernels. is_neox_style changes the RoPE layout those
+        # kernels assume, so it opts out. On ROCm the extra terms are aiter's
+        # kernel contract: head_dim=128, rope_dim=64, one quant group per head,
+        # LayerNorm on k.
+        self.use_dsa_indexer_fusion = (
+            not envs.SGLANG_DISABLE_DSA_INDEXER_FUSION.get()
+            and not is_neox_style
+            and (
+                _is_cuda
+                or (
+                    aiter_indexer_qk_fusion_available()
+                    and isinstance(self.k_norm, LayerNorm)
+                    and self.head_dim == 128
+                    and self.rope_head_dim == 64
+                    and self.block_size == self.head_dim
+                )
+            )
         )
-        # CUDA-only: the fused_q_indexer_rope_first_quant /
-        # fused_k_indexer_norm_rope_store kernels.
-        self.use_dsa_indexer_fusion = _is_cuda and _indexer_fusion_enabled
-        # Folding wk and weights_proj into one GEMM needs no fused kernel, so
-        # ROCm takes it as well. Numerically identical to the split projections.
-        self.merge_wk_weights_proj = (_is_cuda or _is_hip) and _indexer_fusion_enabled
+        if self.use_dsa_indexer_fusion and _is_hip and layer_id == 0:
+            logger.info(
+                "DSA indexer: aiter fused q/k kernel enabled (Hadamard dropped)."
+            )
         self.alt_stream = alt_stream
         self.dsa_enable_prefill_cp = is_dsa_enable_prefill_cp()
         if self.dsa_enable_prefill_cp:
@@ -273,7 +316,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
             prefix=add_prefix("wq_b", prefix),
         )
 
-        if self.merge_wk_weights_proj:
+        if self.use_dsa_indexer_fusion:
             self.wk_weights_proj = ReplicatedLinear(
                 self.hidden_size,
                 self.head_dim + self.n_heads,
@@ -296,15 +339,6 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
                 params_dtype=torch.bfloat16,
                 prefix=add_prefix("weights_proj", prefix),
             )
-        if (
-            config is not None
-            and getattr(config, "index_k_norm_type", "layer") == "rms"
-        ):
-            self.k_norm = RMSNorm(self.head_dim)
-        else:
-            self.k_norm = LayerNorm(
-                self.head_dim, dtype=torch.bfloat16 if _use_aiter else torch.float32
-            )
         self.rotary_emb = get_rope_wrapper(
             rope_head_dim,
             rotary_dim=rope_head_dim,
@@ -314,29 +348,6 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
             is_neox_style=is_neox_style,
             device=get_device().device,
         )
-        self.block_size = block_size
-        # ROCm counterpart of use_dsa_indexer_fusion: route the indexer q/k
-        # preparation through aiter's single fused kernel (k LayerNorm + RoPE +
-        # fp8 quant + paged store, q RoPE + fp8 quant, head-gate scale), which
-        # like the CUDA path drops the Hadamard rotation. The remaining terms are
-        # a capability probe: aiter's kernel is fixed at head_dim=128 /
-        # rope_dim=64, quantizes one group per head, and applies LayerNorm (not
-        # RMSNorm) to k, so anything else falls back to the unfused path.
-        self.use_aiter_indexer_fusion = (
-            _is_hip
-            and _indexer_fusion_enabled
-            and _use_aiter
-            and _is_gfx95_supported
-            and indexer_qk_rope_quant_and_cache is not None
-            and isinstance(self.k_norm, LayerNorm)
-            and self.head_dim == 128
-            and self.rope_head_dim == 64
-            and self.block_size == self.head_dim
-        )
-        if self.use_aiter_indexer_fusion and layer_id == 0:
-            logger.info(
-                "DSA indexer: aiter fused q/k kernel enabled (Hadamard dropped)."
-            )
         self.scale_fmt = scale_fmt
         self.softmax_scale = self.head_dim**-0.5
         self.num_init_tokens = self.num_local_tokens = 0
@@ -419,7 +430,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
     def _maybe_rotate(self, x: torch.Tensor) -> torch.Tensor:
         # Fusion drops the (logit-preserving) Hadamard rotation; without it the
         # index-K cache here matches the fused path that decode reads back.
-        if self.use_dsa_indexer_fusion or self.use_aiter_indexer_fusion:
+        if self.use_dsa_indexer_fusion:
             return x
         return rotate_activation(x)
 
@@ -494,7 +505,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
                 )
             with torch.cuda.stream(self.alt_stream):
                 # TODO we should also put DeepGEMM half SM here?
-                if self.merge_wk_weights_proj:
+                if self.use_dsa_indexer_fusion:
                     key, weights_raw = self._fused_k_weights(x)
                 else:
                     key, _ = self.wk(x)
@@ -513,7 +524,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
             q_rope, _ = torch.split(
                 query, [self.rope_head_dim, self.head_dim - self.rope_head_dim], dim=-1
             )
-            if self.merge_wk_weights_proj:
+            if self.use_dsa_indexer_fusion:
                 key, weights_raw = self._fused_k_weights(x)
             else:
                 key, _ = self.wk(x)
@@ -582,7 +593,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
         x: torch.Tensor,
         positions: torch.Tensor,
     ):
-        if self.merge_wk_weights_proj:
+        if self.use_dsa_indexer_fusion:
             key, _ = self._fused_k_weights(x)
         else:
             key, _ = self.wk(x)
@@ -1330,8 +1341,10 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
             forward_batch.out_cache_loc = forward_batch.out_cache_loc.contiguous()
 
         # Write the same K representation the decode path reads back: fused
-        # (no-Hadamard) when fusion is on, else the legacy Hadamard path.
-        if self.use_dsa_indexer_fusion:
+        # (no-Hadamard) when fusion is on, else the legacy Hadamard path. ROCm
+        # has no k-only fused kernel, so it takes the branch below, which still
+        # skips the Hadamard and so agrees on basis.
+        if _is_cuda and self.use_dsa_indexer_fusion:
             key_raw, _ = self._fused_k_weights(x)
             if num_tokens is not None:
                 assert num_tokens <= key_raw.shape[0]
@@ -1703,30 +1716,30 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
         # wrapper owns base+delta and no LoRA kernel runs under torch.compile.
         # Fusion folds weights_proj into wk_weights_proj, so weights_proj is
         # absent then; short-circuit before touching it.
-        weights_proj_lora = not self.merge_wk_weights_proj and getattr(
+        weights_proj_lora = not self.use_dsa_indexer_fusion and getattr(
             self.weights_proj, "set_lora", False
         )
 
+        fused_qk_eligible = (
+            self.use_dsa_indexer_fusion
+            and not in_piecewise_or_breakable_cuda_graph
+            and forward_batch.attn_cp_metadata is None
+        )
         # aiter's fused kernel is tuned for the one-token-per-sequence decode
         # shape; at prefill widths it costs about twice the kernels it replaces
         # (300 vs 163 us/layer at 16k tokens), so prefill keeps the split path.
         # Hadamard stays off on both sides regardless -- prefill writes the
         # index-K cache that decode reads back, so the two must agree on basis.
         if (
-            self.use_aiter_indexer_fusion
+            fused_qk_eligible
+            and _is_hip
             and forward_batch.forward_mode.is_decode_or_idle()
-            and not in_piecewise_or_breakable_cuda_graph
-            and forward_batch.attn_cp_metadata is None
             and self._index_k_layer_owned(layer_id)
         ):
             q_fp8, weights = self._aiter_fused_qk_prepare_and_store(
                 x, q_lora, positions, forward_batch, layer_id
             )
-        elif (
-            self.use_dsa_indexer_fusion
-            and not in_piecewise_or_breakable_cuda_graph
-            and forward_batch.attn_cp_metadata is None
-        ):
+        elif fused_qk_eligible and _is_cuda:
             q_fp8, weights = self._fused_q_prepare_and_store(
                 x, q_lora, positions, forward_batch, layer_id, act_quant
             )
@@ -1771,7 +1784,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
         elif enable_dual_stream and forward_batch.forward_mode.is_decode_or_idle():
             current_stream = torch.cuda.current_stream()
             self.alt_stream.wait_stream(current_stream)
-            if not self.merge_wk_weights_proj:
+            if not self.use_dsa_indexer_fusion:
                 if weights_proj_lora:
                     weights = self.weights_proj(x)[0].float() * self.n_heads**-0.5
                 else:
@@ -1788,7 +1801,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
                     act_quant=act_quant,
                 )
             current_stream.wait_stream(self.alt_stream)
-            if self.merge_wk_weights_proj:
+            if self.use_dsa_indexer_fusion:
                 weights = self._scale_head_gates(weights_raw, q_scale)
             else:
                 weights = self._apply_q_scale_and_softmax_scale(weights, q_scale)
@@ -1871,7 +1884,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
                 x_for_gate = x
 
             if in_piecewise_or_breakable_cuda_graph:
-                if self.merge_wk_weights_proj:
+                if self.use_dsa_indexer_fusion:
                     weights = (
                         scale_head_gate_graph(
                             weights_raw,
@@ -1892,7 +1905,7 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
                         self.softmax_scale,
                         q_scale,
                     )
-            elif self.merge_wk_weights_proj:
+            elif self.use_dsa_indexer_fusion:
                 weights = self._scale_head_gates(weights_raw, q_scale)
             elif weights_proj_lora:
                 weights = self.weights_proj(x_for_gate)[0].float() * self.n_heads**-0.5
@@ -2004,6 +2017,6 @@ def indexer_merges_weights_proj(model: torch.nn.Module) -> bool:
     drift from what the model actually holds.
     """
     return any(
-        isinstance(module, Indexer) and module.merge_wk_weights_proj
+        isinstance(module, Indexer) and module.use_dsa_indexer_fusion
         for module in model.modules()
     )
