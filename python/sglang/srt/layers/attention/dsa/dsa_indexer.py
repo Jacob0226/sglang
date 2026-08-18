@@ -1725,23 +1725,17 @@ class Indexer(DSANPUIndexerMixin, BaseFusedOp):
             and not in_piecewise_or_breakable_cuda_graph
             and forward_batch.attn_cp_metadata is None
         )
-        # aiter's fused kernel is tuned for the one-token-per-sequence decode
-        # shape; at prefill widths it costs about twice the kernels it replaces
-        # (300 vs 163 us/layer at 16k tokens), so prefill keeps the split path.
-        # Hadamard stays off on both sides regardless -- prefill writes the
-        # index-K cache that decode reads back, so the two must agree on basis.
-        if (
-            fused_qk_eligible
-            and _is_hip
-            and forward_batch.forward_mode.is_decode_or_idle()
-            and self._index_k_layer_owned(layer_id)
-        ):
-            q_fp8, weights = self._aiter_fused_qk_prepare_and_store(
-                x, q_lora, positions, forward_batch, layer_id
-            )
-        elif fused_qk_eligible and _is_cuda:
-            q_fp8, weights = self._fused_q_prepare_and_store(
-                x, q_lora, positions, forward_batch, layer_id, act_quant
+        # Layer ownership is only checked on the aiter side: the CUDA kernels
+        # test it themselves inside the store.
+        if fused_qk_eligible and (_is_cuda or self._index_k_layer_owned(layer_id)):
+            q_fp8, weights = (
+                self._fused_q_prepare_and_store(
+                    x, q_lora, positions, forward_batch, layer_id, act_quant
+                )
+                if _is_cuda
+                else self._aiter_fused_qk_prepare_and_store(
+                    x, q_lora, positions, forward_batch, layer_id
+                )
             )
         elif (
             is_graph_dsa_split_op_surface(forward_batch)
