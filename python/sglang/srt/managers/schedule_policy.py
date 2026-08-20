@@ -887,14 +887,17 @@ class PrefillAdder:
         storage_hit_len: int = 0,
         compute_charge: Optional[int] = None,
     ):
-        # `compute_charge` decouples the COMPUTE budgets (`rem_chunk_tokens` and
-        # `rem_input_tokens`, both counted in forward-pass tokens) from the KV
-        # budgets below, which are counted in pages. Both compute budgets have to
-        # move together: they are usually configured to the same value
-        # (chunked_prefill_size == max_prefill_tokens == 16384), so leaving either
-        # one page-ceiled makes it hit zero first and stop the admission loop while
-        # the other still has the rounding slack unspent.
-        # Only the exact-chunk-fill path passes it; otherwise everything is ceiled.
+        """Charge one admitted request against the prefill budgets.
+
+        `compute_charge` is what the compute budgets (`rem_chunk_tokens`,
+        `rem_input_tokens`, `rem_dllm_tokens`) are billed, counted in
+        forward-pass tokens; the KV budgets are always billed page-ceiled
+        tokens. It defaults to the ceiled count, so only the exact-chunk-fill
+        path parts from upstream behaviour. Both compute budgets have to take
+        it: they are usually configured to the same value, so leaving either one
+        ceiled makes it hit zero first and stop admission with the rounding
+        slack unspent.
+        """
         # TODO(lsyin): check this workaround logic, which only ensures the prefill will not out of memory, and may be too conservative
         extend_input_len = self.ceil_paged_tokens(extend_input_len)
         if compute_charge is None:
@@ -930,9 +933,8 @@ class PrefillAdder:
 
         # reprocessed_log_* is a subset of log_*; metrics_reporter subtracts it
         # when computing the first-attempt prefix cache hit rate.
-        # `#new-token` reports the tokens the forward actually runs (the
-        # long-standing TODO below `log_input_tokens`) whenever the caller gives
-        # the raw count.
+        # On the gated path this makes `#new-token` report the tokens the forward
+        # actually runs, which is the TODO(lsyin) next to `log_input_tokens`.
         self.log_hit_tokens += prefix_len
         self.log_input_tokens += compute_charge
         if retracted_stain:
