@@ -78,7 +78,7 @@ CLIP_MAX_NEW_TOKENS = int(
 
 @lru_cache(maxsize=1)
 def _use_exact_chunk_fill() -> bool:
-    """Whether to charge the chunked-prefill compute budget in tokens.
+    """Whether to charge the chunked-prefill compute budget in tokens (gfx95 only).
 
     Gated on gfx95 because that is where the win is: the aiter absorb bmm picks
     its EVEN_MN specialization from M % BLOCK_SIZE_M, so a short batch costs 2x
