@@ -78,28 +78,17 @@ CLIP_MAX_NEW_TOKENS = int(
 
 @lru_cache(maxsize=1)
 def _use_exact_chunk_fill() -> bool:
-    """Whether to fill the chunked-prefill budget exactly (gfx95 only).
+    """Whether to charge the chunked-prefill compute budget in tokens.
 
-    Two things conspire to make a prefill batch fall short of
-    `chunked_prefill_size`: `_update_prefill_budget` charges the page-ceiled
-    extend length to `rem_chunk_tokens`, and `add_one_req` floors the last
-    request's truncation back down to a page. Together they leak up to
-    `page_size - 1` tokens per request, so a 16384-token chunk runs 16289-16368
-    tokens and every dense GEMM in the forward gets a misaligned M (on gfx95 the
-    absorb bmm loses its EVEN_MN fast path, worth ~2.2x on that kernel).
-
-    Neither floor is a correctness requirement: `alloc_extend` handles a partial
-    leading/trailing page explicitly, DSA builds its page tables per token, and
-    `add_chunked_req` already commits non-page-aligned continuation chunks. The
-    page granularity only buys conservative KV accounting (kept here — the KV
-    reservations stay page-ceiled) and page-aligned radix keys.
-
-    Gated on gfx95 so CUDA and other AMD parts keep upstream behaviour.
+    Gated on gfx95 because that is where the win is: the aiter absorb bmm picks
+    its EVEN_MN specialization from M % BLOCK_SIZE_M, so a short batch costs 2x
+    on that kernel, against 1% for the hipBLASLt GEMMs that just run one extra
+    partial tile.
     """
     if not envs.SGLANG_EXACT_CHUNK_FILL.get():
         return False
-    # Imported lazily: is_gfx95_supported() touches the CUDA device properties,
-    # and this module is imported before the scheduler picks its device.
+    # is_gfx95_supported() reads the device properties, and this module is
+    # imported before the scheduler picks its device.
     from sglang.srt.utils import is_gfx95_supported
 
     return is_gfx95_supported()
