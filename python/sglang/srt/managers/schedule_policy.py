@@ -100,9 +100,9 @@ def _use_exact_chunk_fill() -> bool:
         return False
     # Imported lazily: is_gfx95_supported() touches the CUDA device properties,
     # and this module is imported before the scheduler picks its device.
-    from sglang.srt.utils import is_gfx95_supported, is_hip
+    from sglang.srt.utils import is_gfx95_supported
 
-    return is_hip() and is_gfx95_supported()
+    return is_gfx95_supported()
 
 
 # Threshold for in-batch prefix cache.
