@@ -6,7 +6,7 @@ from array import array
 from sglang.srt.environ import envs
 from sglang.srt.managers.prefill_delayer import PrefillDelayerSinglePassExecutor
 from sglang.srt.runtime_context import get_disagg
-from sglang.srt.utils import get_bool_env_var, is_hip
+from sglang.srt.utils import get_bool_env_var, is_gfx95_supported, is_hip
 
 _ROUTING_KEY_POLICY_DEBUG_LOG = get_bool_env_var("SGLANG_ROUTING_KEY_POLICY_DEBUG_LOG")
 logger = logging.getLogger(__name__)
@@ -85,13 +85,7 @@ def _use_exact_chunk_fill() -> bool:
     on that kernel, against 1% for the hipBLASLt GEMMs that just run one extra
     partial tile.
     """
-    if not envs.SGLANG_EXACT_CHUNK_FILL.get():
-        return False
-    # is_gfx95_supported() reads the device properties, and this module is
-    # imported before the scheduler picks its device.
-    from sglang.srt.utils import is_gfx95_supported
-
-    return is_gfx95_supported()
+    return envs.SGLANG_EXACT_CHUNK_FILL.get() and is_gfx95_supported()
 
 
 # Threshold for in-batch prefix cache.
