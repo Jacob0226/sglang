@@ -17,7 +17,8 @@ typedef unsigned u32x4 __attribute__((ext_vector_type(4)));
 struct __attribute__((packed)) Args {
     const uint16_t* x; const uint8_t* w1; const uint8_t* s1; const uint8_t* w2; const uint8_t* s2;
     const int32_t* ids; const float* wts; uint16_t* hbuf; int32_t* ctrl; uint16_t* out; float* acc;
-    int32_t tok, slots, E, pad;
+    int32_t tok, slots, E;
+    float swiglu_limit;  // > 0: silu(min(g, L)) * clamp(u, -L, L)
 };
 static_assert(sizeof(Args) == 104, "kernarg ABI drift: keep in sync with Args in __init__.py");
 static constexpr int DIM = 4096;
@@ -220,8 +221,12 @@ __device__ __forceinline__ void p1_body(const Args& a) {
             for (int i = 0; i < 4; ++i) {
                 const int mm = 4 * q + i;
                 if (mm < me) {
-                    const float gv = s_red[0][j][i][lane] + s_red[1][j][i][lane];
-                    const float uv = s_red[2][j][i][lane] + s_red[3][j][i][lane];
+                    float gv = s_red[0][j][i][lane] + s_red[1][j][i][lane];
+                    float uv = s_red[2][j][i][lane] + s_red[3][j][i][lane];
+                    if (a.swiglu_limit > 0.f) {
+                        gv = fminf(gv, a.swiglu_limit);
+                        uv = fminf(fmaxf(uv, -a.swiglu_limit), a.swiglu_limit);
+                    }
                     const float hv = gv / (1.f + __expf(-gv)) * uv;
                     a.hbuf[((size_t)s_tok[rank + mm] * slots + s_slot[rank + mm]) * INTER + (s * NTS + j) * 16 + r] = f2bf(hv);
                 }
@@ -413,3 +418,5 @@ extern "C" __global__ void __launch_bounds__(256) smallm_f8_p2_i256_s11(Args a) 
 extern "C" __global__ void __launch_bounds__(256) smallm_f8_p2_i256_s10(Args a) { p2_body<256, 10, true>(a); }
 extern "C" __global__ void __launch_bounds__(256) smallm_f8_p2_i128_s11(Args a) { p2_body<128, 11, true>(a); }
 extern "C" __global__ void __launch_bounds__(256) smallm_f8_p2_i128_s10(Args a) { p2_body<128, 10, true>(a); }
+extern "C" __global__ void __launch_bounds__(256) smallm_p2_i512_s9(Args a) { p2_body<512, 9>(a); }
+extern "C" __global__ void __launch_bounds__(256) smallm_p2_i512_s8(Args a) { p2_body<512, 8>(a); }
