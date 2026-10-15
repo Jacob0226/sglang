@@ -2441,6 +2441,20 @@ class TestGoldenModelOverrides(_IsolatedPublish):
                     "dsa_decode_backend": "triton",
                 },
             )
+            # DCP decode only has the Triton split-K kernel, so the default is
+            # fine but any other explicit decode backend has to be rejected
+            # rather than silently replaced.
+            self.assertEqual(
+                _dsa_split_backend_resolution(_view(dcp_size=4)),
+                {
+                    "dsa_prefill_backend": "triton",
+                    "dsa_decode_backend": "triton",
+                },
+            )
+            with self.assertRaisesRegex(ValueError, "--dcp-size > 1"):
+                _dsa_split_backend_resolution(
+                    _view(dcp_size=4, dsa_decode_backend="aiter")
+                )
 
     def test_flashinfer_allreduce_fusion_passes(self):
         from sglang.srt.arg_groups.overrides import (
@@ -3558,6 +3572,16 @@ class TestGoldenModelOverrides(_IsolatedPublish):
                                     _deepseek_family_overrides(
                                         _args(dcp_size=2), hf_config
                                     )
+                        # DSA + DCP: CUDA has no path and stays rejected.
+                        with self.assertRaisesRegex(ValueError, "ROCm and NPU"):
+                            _deepseek_family_overrides(_args(dcp_size=4), None)
+                    # NPU has its own DSA DCP path (gated in model_hook), so the
+                    # ROCm-only limits must not reject it.
+                    with override_platform(is_npu=True):
+                        self.assertEqual(
+                            _deepseek_family_overrides(_args(dcp_size=4), None),
+                            {"attention_backend": "dsa"},
+                        )
                     # HIP without the preshuffle path: page 1
                     with override_platform(is_hip=True):
                         with patch(
