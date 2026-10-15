@@ -2195,7 +2195,9 @@ class DeepseekSparseAttnBackend(
         ):
             # Q arrives all-gathered; attend owned slots, the caller LSE-merges.
             # Verify / draft-extend rows are one query per draft token.
-            if q_rope is not None:
+            if q_rope is None or q_rope.numel() == 0:
+                q = q.view(-1, layer.tp_q_head_num, layer.head_dim)
+            else:
                 q = torch.cat(
                     [
                         q.view(-1, layer.tp_q_head_num, layer.v_head_dim),
