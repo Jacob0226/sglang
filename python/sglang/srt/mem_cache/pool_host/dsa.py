@@ -153,6 +153,11 @@ class DSAIndexerPoolHost(HostKVCache):
         # rank's rows, so one index page spans logical_page_size of them.
         self.dcp_size = anchor_host.dcp_size
         self.dcp_rank = anchor_host.dcp_rank
+        # A k-pool index K is not sharded (see dsa_index_k_spans_dcp_ranks):
+        # its pages are addressed by the widened indices, page_size of them each.
+        self.index_k_spans_dcp_ranks = getattr(
+            device_pool, "index_k_spans_dcp_ranks", False
+        )
         self.layout = anchor_host.layout
         self.pin_memory = pin_memory
         self.device = device
@@ -183,7 +188,10 @@ class DSAIndexerPoolHost(HostKVCache):
         # uint8 storage, so element counts below are byte counts
         self.indexer_page_stride_size = storage_info.page_bytes(self.page_size)
         self.indexer_layout_dim = self.indexer_page_stride_size * self.layer_num
-        self.indexer_page_num = (self.size + self.page_size + 1) // self.page_size
+        index_size = self.size
+        if self.index_k_spans_dcp_ranks:
+            index_size *= self.dcp_size
+        self.indexer_page_num = (index_size + self.page_size + 1) // self.page_size
         self.size_per_token = storage_info.bytes_per_token_per_layer * self.layer_num
 
         self.can_use_jit = False
@@ -201,7 +209,9 @@ class DSAIndexerPoolHost(HostKVCache):
             return
 
         requested_bytes = storage_info.host_bytes(
-            page_num=self.page_num, layer_num=self.layer_num, page_size=self.page_size
+            page_num=self.indexer_page_num,
+            layer_num=self.layer_num,
+            page_size=self.page_size,
         )
         available_bytes = host_memory_budget_bytes(requested_bytes)
         if requested_bytes > available_bytes:
@@ -340,7 +350,9 @@ class DSAIndexerPoolHost(HostKVCache):
     def _get_indexer_page_indices(self, host_indices, device_indices):
         if host_indices.numel() == 0:
             return host_indices, device_indices
-        span = self.logical_page_size
+        span = (
+            self.page_size if self.index_k_spans_dcp_ranks else self.logical_page_size
+        )
         if host_indices.numel() % span != 0:
             raise ValueError(
                 "Index buffer transfer expects page-aligned indices for DSA."
