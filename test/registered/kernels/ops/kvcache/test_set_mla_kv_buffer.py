@@ -5,6 +5,7 @@ import torch
 
 from sglang.kernels.jit.utils import get_ci_test_range
 from sglang.kernels.ops.kvcache.mla_buffer import (
+    _set_mla_kv_buffer_impl,
     set_mla_kv_buffer_naive,
     set_mla_kv_buffer_triton,
     set_mla_kv_buffer_triton_fp8_quant,
@@ -343,6 +344,46 @@ def test_set_mla_kv_buffer_naive_matches_triton(rope_dim):
     )
 
     torch.testing.assert_close(from_naive, reference, rtol=0.0, atol=0.0)
+
+
+@pytest.mark.parametrize("rope_dim", [TRITON_ROPE_DIM, 0])
+@pytest.mark.parametrize("dcp_world_size", [2, 4])
+def test_set_mla_kv_buffer_dcp_owner_rule(rope_dim, dcp_world_size):
+    """Under DCP each rank keeps only the widened locs it owns, at loc // dcp.
+
+    NoPE models (rope_dim == 0) take a separate kernel, so both widths are pinned.
+    """
+    dtype = torch.bfloat16
+    n_loc = 64
+    cache_k_nope = torch.randn((n_loc, 1, TRITON_NOPE_DIM), dtype=dtype, device=DEVICE)
+    cache_k_rope = torch.randn((n_loc, 1, rope_dim), dtype=dtype, device=DEVICE)
+    loc = torch.randperm(CACHE_SIZE * dcp_world_size - 1, device=DEVICE)[:n_loc] + 1
+    shape = (CACHE_SIZE, 1, TRITON_NOPE_DIM + rope_dim)
+
+    for dcp_rank in range(dcp_world_size):
+        from_triton = torch.randn(shape, dtype=dtype, device=DEVICE)
+        from_naive = from_triton.clone()
+        for impl, out in (
+            (_set_mla_kv_buffer_impl, from_triton),
+            (set_mla_kv_buffer_naive, from_naive),
+        ):
+            impl(
+                out,
+                loc,
+                cache_k_nope,
+                cache_k_rope,
+                reserved_skip_index=0,
+                dcp_world_size=dcp_world_size,
+                dcp_rank=dcp_rank,
+            )
+        torch.testing.assert_close(from_triton, from_naive, rtol=0.0, atol=0.0)
+
+        owned = loc % dcp_world_size == dcp_rank
+        rows = from_triton.view(CACHE_SIZE, -1)[loc[owned] // dcp_world_size]
+        expected = torch.cat(
+            (cache_k_nope[owned, 0], cache_k_rope[owned, 0]), dim=-1
+        )
+        torch.testing.assert_close(rows, expected, rtol=0.0, atol=0.0)
 
 
 @CUDA_TMA_ONLY

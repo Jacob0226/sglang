@@ -92,6 +92,8 @@ def set_mla_kv_buffer_kernel_norope(
     nope_stride: tl.constexpr,
     nope_dim: tl.constexpr,
     BLOCK: tl.constexpr,
+    DCP_RANK: tl.constexpr,
+    DCP_WORLD_SIZE: tl.constexpr,
     USE_GDC: tl.constexpr = False,
 ):
     pid_loc = tl.program_id(0)
@@ -105,13 +107,14 @@ def set_mla_kv_buffer_kernel_norope(
         tl.extra.cuda.gdc_wait()
 
     loc = tl.load(loc_ptr + pid_loc).to(tl.int64)
-    dst_ptr = kv_buffer_ptr + loc * buffer_stride + offs
+    is_owned = loc % DCP_WORLD_SIZE == DCP_RANK
+    dst_ptr = kv_buffer_ptr + (loc // DCP_WORLD_SIZE) * buffer_stride + offs
 
     src = tl.load(
         cache_k_nope_ptr + pid_loc * nope_stride + offs,
-        mask=mask,
+        mask=mask & is_owned,
     )
-    tl.store(dst_ptr, src, mask=mask)
+    tl.store(dst_ptr, src, mask=mask & is_owned)
 
     if USE_GDC:
         tl.extra.cuda.gdc_launch_dependents()
@@ -232,6 +235,8 @@ def _set_mla_kv_buffer_impl(
             cache_k_nope.stride(0),
             nope_dim,
             BLOCK=BLOCK,
+            DCP_RANK=dcp_rank,
+            DCP_WORLD_SIZE=dcp_world_size,
             **pdl_kwargs,
         )
         return
