@@ -5194,8 +5194,14 @@ class DSATokenToKVPool(MLATokenToKVPool):
             f"page_size {self.page_size} must be a multiple of index_kpool {index_kpool}"
         )
         self.index_page_size = self.page_size // index_kpool
+        dcp_size = get_parallel().attn_dcp_size
+        # See dsa_index_k_spans_dcp_ranks: k-pool index K stays whole on every
+        # rank and is addressed by the widened locs.
+        self.index_k_spans_dcp_ranks = _is_hip and index_kpool > 1 and dcp_size > 1
         if index_buf_size is None:
             index_buf_size = size
+            if self.index_k_spans_dcp_ranks:
+                index_buf_size = (size + self.page_size) * dcp_size
         self.index_buf_size = index_buf_size
         # num head == 1 and head dim == 128 for index_k in DSA
         assert index_head_dim == 128

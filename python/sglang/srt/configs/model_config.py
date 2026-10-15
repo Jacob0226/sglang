@@ -221,6 +221,19 @@ def dsa_draft_shards_under_dcp(config, dcp_size: int) -> bool:
     return dcp_size > 1 and get_platform().is_hip and is_deepseek_dsa(config)
 
 
+def dsa_index_k_spans_dcp_ranks(config, dcp_size: int) -> bool:
+    """Whether every DCP rank keeps the whole DSA index K, addressed by widened locs.
+
+    A k-pool index key pools ``index_kpool`` consecutive positions, which the
+    per-token owner rule spreads over different ranks, so it cannot be sharded.
+    Only the MLA KV is sharded then; the indexer runs as without DCP.
+    """
+    return (
+        dsa_draft_shards_under_dcp(config, dcp_size)
+        and getattr(config, "index_kpool", 1) > 1
+    )
+
+
 def is_glm_moe_dsa(config) -> bool:
     """True for GLM-5.2, both the main arch and the NextN draft head."""
     return _hf_arch(config) in (

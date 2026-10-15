@@ -169,7 +169,11 @@ def _deepseek_family_overrides(server_args: Any, hf_config: Any) -> dict:
                 )
             else:
                 index_kpool = get_dsa_index_kpool(hf_config)
-                if index_kpool > 1 and cfg.dcp_size > 1:
+                if (
+                    index_kpool > 1
+                    and cfg.dcp_size > 1
+                    and not get_platform().is_hip
+                ):
                     raise ValueError(
                         "--dcp-size > 1 is not supported for DSA with "
                         f"index_kpool={index_kpool}: a pooled index key spans "

@@ -3378,7 +3378,6 @@ class DeepseekSparseAttnBackend(
             triton_sparse_mla_decode_splitk,
         )
 
-        assert self.dsa_index_kpool <= 1, "DSA + DCP does not support index kpool"
         q_all = q_all.view(-1, layer.tp_q_head_num, layer.head_dim)
         local_table, local_lens = dcp_compact_read_table(page_table_1)
         if persistent_workspace:

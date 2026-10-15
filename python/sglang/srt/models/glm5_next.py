@@ -30,6 +30,8 @@ from sglang.srt.layers.attention import vision_utils
 from sglang.srt.layers.attention.vision import VisionAttention
 from sglang.srt.layers.aux_hidden_states import AuxHiddenStateList
 from sglang.srt.layers.conv import Conv2dLayer
+from sglang.srt.layers.dcp.dsa import dcp_forward_scope
+from sglang.srt.layers.dcp.planner import prepare_decode_context_parallel_metadata
 from sglang.srt.layers.dp_attention import is_dp_attention_enabled
 from sglang.srt.layers.layer_boundary import (
     PLAIN_RESIDUAL_OPS,
@@ -1862,7 +1864,10 @@ class Glm5NextForConditionalGeneration(nn.Module):
         if self.is_mrope_enabled:
             positions = forward_batch.mrope_positions
 
-        with get_attn_tp_context().maybe_input_scattered(forward_batch):
+        with (
+            get_attn_tp_context().maybe_input_scattered(forward_batch),
+            dcp_forward_scope(forward_batch),
+        ):
             if input_embeds is not None and not forward_batch.contains_mm_inputs():
                 # Preserve input_embeds / replace_embeds supplied by the runner.
                 # The MM routine otherwise performs a fresh token lookup.
@@ -1893,6 +1898,9 @@ class Glm5NextForConditionalGeneration(nn.Module):
             )
         else:
             return hidden_states
+
+    def prepare_context_parallel_metadata_for_dcp(self, *args, **kwargs):
+        return prepare_decode_context_parallel_metadata(*args, **kwargs)
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]], is_nextn=False):
         if is_nextn:

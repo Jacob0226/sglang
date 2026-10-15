@@ -19,6 +19,7 @@ from sglang.srt.arg_groups.overrides import resolving_view
 from sglang.srt.configs.hybrid_arch import mambaish_config
 from sglang.srt.configs.model_config import (
     AttentionArch,
+    dsa_index_k_spans_dcp_ranks,
     dsa_layer_skips_topk,
     get_dsa_index_head_dim,
     get_dsa_index_kpool,
@@ -266,11 +267,14 @@ class DefaultPoolConfigurator(MemoryPoolConfigurator):
             ):
                 draft_num_layers = int(eagle_draft_num_layers)
                 if is_deepseek_dsa(kvc.model_config.hf_config):
+                    index_k_spans_ranks = dsa_index_k_spans_dcp_ranks(
+                        kvc.model_config.hf_config, dcp_size
+                    )
                     target_indexer_size = self._compute_dsa_indexer_cell_size(
                         kvc=kvc,
                         num_layers=num_layers,
                     )
-                    if _is_npu and dcp_size > 1:
+                    if (_is_npu and dcp_size > 1) or index_k_spans_ranks:
                         target_indexer_size *= dcp_size
                     target_kv_size = self._cell_size - target_indexer_size
                     from sglang.srt.layers.cp.utils import (
@@ -292,6 +296,8 @@ class DefaultPoolConfigurator(MemoryPoolConfigurator):
                     # allocator-global slot space on NPU DCP.
                     if _is_npu and dcp_size > 1:
                         draft_kv_size *= dcp_size
+                        draft_indexer_size *= dcp_size
+                    elif index_k_spans_ranks:
                         draft_indexer_size *= dcp_size
                     self._cell_size += draft_kv_size + draft_indexer_size
                 else:
@@ -388,7 +394,9 @@ class DefaultPoolConfigurator(MemoryPoolConfigurator):
                     kvc=kvc,
                     num_layers=num_layers,
                 )
-                if _is_npu and not kvc.is_draft_worker and dcp_size > 1:
+                if (
+                    _is_npu and not kvc.is_draft_worker and dcp_size > 1
+                ) or dsa_index_k_spans_dcp_ranks(model_config.hf_config, dcp_size):
                     indexer_cell_size *= dcp_size
                 cell_size += indexer_cell_size
         elif is_minimax_sparse(model_config.hf_config):

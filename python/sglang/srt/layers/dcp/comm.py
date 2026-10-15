@@ -214,6 +214,8 @@ def all_gather_kv_cache_for_mha_extend(
     prefix_kv_a, prefix_k_pe = token_to_kv_pool.get_mla_kv_buffer(
         attn_mqa, dcp_local_prefix_kv_indices, dst_dtype=kv_a.dtype
     )
+    if prefix_k_pe is None:
+        prefix_k_pe = prefix_kv_a.new_empty(prefix_kv_a.shape[:-1] + (0,))
     extend_prefix_lens_cpu = torch.tensor(extend_prefix_lens_cpu)
     gathered_kv_cache = all_gather_kv_cache_for_dcp(
         prefix_kv_a,
@@ -305,11 +307,19 @@ def all_gather_kv_cache_for_mla_extend(
         ...,
         :kv_lora_rank,
     ] = k_nope
-    dcp_kv_buffer[
-        dcp_extend_prefix_lens_sum:,
-        ...,
-        kv_lora_rank:,
-    ] = k_pe
+    if k_pe is not None and k_pe.numel() > 0:
+        dcp_kv_buffer[
+            dcp_extend_prefix_lens_sum:,
+            ...,
+            kv_lora_rank:,
+        ] = k_pe
+
+
+def _cat_mla_kv(kv_a: torch.Tensor, k_pe: Optional[torch.Tensor]) -> torch.Tensor:
+    # NoPE MLA (qk_rope_head_dim == 0) has no k_pe half.
+    if k_pe is None or k_pe.numel() == 0:
+        return kv_a
+    return torch.cat([kv_a, k_pe], dim=-1)
 
 
 # all gather kv cache and re-org to query orders
@@ -324,7 +334,7 @@ def all_gather_kv_cache_for_dcp(
     """
     parallel = get_parallel()
     if not parallel.dcp_enabled:
-        return torch.cat([prefix_kv_a, prefix_k_pe], dim=-1)
+        return _cat_mla_kv(prefix_kv_a, prefix_k_pe)
     # 1. compute max kv_lens for each seq
     dcp_world_size = parallel.dcp_size
     dcp_rank = parallel.dcp_rank
@@ -350,7 +360,7 @@ def all_gather_kv_cache_for_dcp(
     local_kv_lens_cu[1:] = torch.cumsum(local_kv_lens, dim=0)
 
     padded_kv_cache_arr = []
-    prefix_kv_cache = torch.cat([prefix_kv_a, prefix_k_pe], dim=-1)
+    prefix_kv_cache = _cat_mla_kv(prefix_kv_a, prefix_k_pe)
     for req_idx in range(len(prefix_kv_lens_cpu)):
         padded_tensor = prefix_kv_cache.new_empty(
             (padded_lens[req_idx].item(),) + prefix_kv_cache.size()[1:]
