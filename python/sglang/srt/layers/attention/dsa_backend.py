@@ -4016,6 +4016,7 @@ class DeepseekSparseAttnBackend(
                         forward_batch.extend_prefix_lens_cpu,
                         forward_batch.extend_num_tokens,
                         self.num_q_heads * get_parallel().attn_dcp_size,
+                        self.kv_cache_dim * self.token_to_kv_pool.dtype.itemsize,
                     )
                 )
                 forward_batch.dcp_split_indexer = (

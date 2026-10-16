@@ -192,7 +192,10 @@ def dcp_exchange_topk(
 
 
 def dcp_use_owned_prefill(
-    extend_prefix_lens_cpu: List[int], extend_num_tokens: int, gathered_heads: int
+    extend_prefix_lens_cpu: List[int],
+    extend_num_tokens: int,
+    gathered_heads: int,
+    kv_bytes_per_token: int,
 ) -> bool:
     """Whether a DSA prefill should attend owned slots + LSE merge.
 
@@ -203,7 +206,11 @@ def dcp_use_owned_prefill(
     ratio = envs.SGLANG_DCP_DSA_OWNED_PREFILL_RATIO.get()
     if ratio < 0:
         return False
-    return sum(extend_prefix_lens_cpu) >= ratio * gathered_heads * extend_num_tokens
+    prefix_tokens = sum(extend_prefix_lens_cpu)
+    budget_mb = envs.SGLANG_DCP_DSA_GATHER_PREFIX_BUDGET_MB.get()
+    if budget_mb >= 0 and prefix_tokens * kv_bytes_per_token > budget_mb << 20:
+        return True
+    return prefix_tokens >= ratio * gathered_heads * extend_num_tokens
 
 
 def dcp_use_split_indexer(

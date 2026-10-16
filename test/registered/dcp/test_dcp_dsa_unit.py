@@ -315,14 +315,33 @@ class TestDcpExchangeTopkPrefill(CustomTestCase):
 class TestDcpOwnedPrefillChoice(CustomTestCase):
     def test_ratio(self):
         ratio = dcp_dsa.envs.SGLANG_DCP_DSA_OWNED_PREFILL_RATIO
-        with ratio.override(3.0):
-            self.assertFalse(dcp_dsa.dcp_use_owned_prefill([0], 4096, 64))
-            self.assertFalse(dcp_dsa.dcp_use_owned_prefill([100_000, 0], 1024, 64))
-            self.assertTrue(dcp_dsa.dcp_use_owned_prefill([300_000], 1024, 64))
-        with ratio.override(0.0):
-            self.assertTrue(dcp_dsa.dcp_use_owned_prefill([0], 4096, 64))
+        budget = dcp_dsa.envs.SGLANG_DCP_DSA_GATHER_PREFIX_BUDGET_MB
+        with budget.override(-1), ratio.override(3.0):
+            self.assertFalse(dcp_dsa.dcp_use_owned_prefill([0], 4096, 64, 1024))
+            self.assertFalse(
+                dcp_dsa.dcp_use_owned_prefill([100_000, 0], 1024, 64, 1024)
+            )
+            self.assertTrue(dcp_dsa.dcp_use_owned_prefill([300_000], 1024, 64, 1024))
+        with budget.override(-1), ratio.override(0.0):
+            self.assertTrue(dcp_dsa.dcp_use_owned_prefill([0], 4096, 64, 1024))
         with ratio.override(-1.0):
-            self.assertFalse(dcp_dsa.dcp_use_owned_prefill([10**9], 1, 64))
+            self.assertFalse(dcp_dsa.dcp_use_owned_prefill([10**9], 1, 64, 1024))
+
+    def test_gather_prefix_budget(self):
+        budget = dcp_dsa.envs.SGLANG_DCP_DSA_GATHER_PREFIX_BUDGET_MB
+        with dcp_dsa.envs.SGLANG_DCP_DSA_OWNED_PREFILL_RATIO.override(3.0):
+            with budget.override(1024):
+                # 1M prefix tokens * 1 KiB fit; one more page does not.
+                self.assertFalse(
+                    dcp_dsa.dcp_use_owned_prefill([1 << 20], 16384, 64, 1024)
+                )
+                self.assertTrue(
+                    dcp_dsa.dcp_use_owned_prefill([1 << 20, 256], 16384, 64, 1024)
+                )
+            with budget.override(-1):
+                self.assertFalse(
+                    dcp_dsa.dcp_use_owned_prefill([2 << 20], 16384, 64, 1024)
+                )
 
     def test_split_indexer(self):
         min_kv = dcp_dsa.envs.SGLANG_DCP_DSA_SPLIT_INDEXER_MIN_KV

@@ -952,6 +952,11 @@ class Envs:
     # ratio * gathered heads * extend tokens; below that it all-gathers the
     # prefix KV instead. 0 always takes the owned path; negative never does.
     SGLANG_DCP_DSA_OWNED_PREFILL_RATIO = EnvFloat(3.0)
+    # The gathered path holds the batch's whole cached prefix KV on every rank
+    # (several transient copies per layer), so it is unbounded by the chunked
+    # prefill size. Above this much prefix KV, take the owned path, whose
+    # buffers scale with the extend tokens only. Negative disables the cap.
+    SGLANG_DCP_DSA_GATHER_PREFIX_BUDGET_MB = EnvInt(1024)
     # Fixed per-chunk logits budget for the owned DCP DSA prefill indexer. It
     # must be identical on every DCP rank: each chunk runs a top-k all-gather.
     SGLANG_DCP_DSA_PREFILL_LOGITS_BUDGET_MB = EnvInt(1024)
