@@ -1193,6 +1193,11 @@ class Envs:
     SGLANG_CRASH_ON_TRITON_LOAD_AFTER_READY = EnvBool(False)
     SGLANG_TRITON_SLOW_COMPILE_THRESHOLD_SECS = EnvFloat(1.0)
     SGLANG_TRITON_LOAD_WARNING_THRESHOLD_GB = EnvFloat(1.0)
+    # Device memory kept outside the torch caching allocator once serving
+    # starts, for Triton module loads and HIP kernel scratch at first use. The
+    # allocator otherwise grows into all free memory and those allocations
+    # fail mid-serving (HSA_STATUS_ERROR_OUT_OF_RESOURCES on ROCm). 0 disables.
+    SGLANG_SERVING_DEVICE_MEM_HEADROOM_GB = EnvFloat(0.0)
     # gfx950 MLA decode stage-1: pick the launch geometry and split count per batch.
     # Reorders the fp32 accumulation, so off by default.
     SGLANG_MLA_DECODE_TUNE = EnvBool(False)

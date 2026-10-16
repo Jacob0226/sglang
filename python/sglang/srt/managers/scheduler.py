@@ -1883,6 +1883,26 @@ class Scheduler(
 
         rank_consensus_checker.shutdown()
 
+    def _cap_torch_allocator_for_serving(self) -> None:
+        """Keep SGLANG_SERVING_DEVICE_MEM_HEADROOM_GB free of the torch cache.
+
+        Past the cap the allocator frees its unused cached blocks and retries,
+        so the headroom stays available to allocations outside torch.
+        """
+        headroom_gb = envs.SGLANG_SERVING_DEVICE_MEM_HEADROOM_GB.get()
+        if headroom_gb <= 0 or not (is_cuda() or _is_hip):
+            return
+        device = torch.cuda.current_device()
+        free, total = torch.cuda.mem_get_info(device)
+        reserved = torch.cuda.memory_reserved(device)
+        cap = max(reserved, reserved + free - int(headroom_gb * (1 << 30)))
+        torch.cuda.set_per_process_memory_fraction(cap / total, device)
+        logger.info(
+            f"Capped the torch allocator at {cap / (1 << 30):.2f} GiB "
+            f"(reserved {reserved / (1 << 30):.2f} GiB, free {free / (1 << 30):.2f} GiB, "
+            f"headroom {headroom_gb:.1f} GiB)"
+        )
+
     def run_event_loop(self) -> None:
         """Run the scheduler's event loop.
 
@@ -1892,6 +1912,7 @@ class Scheduler(
         # Triton kernel device-load is a lazy first-use at serving time.
         triton_load_watch.install()
         triton_load_watch.mark_serving_started()
+        self._cap_torch_allocator_for_serving()
 
         if use_mlx():
             # MLX overlap uses mx.async_eval for CPU/GPU overlap,
