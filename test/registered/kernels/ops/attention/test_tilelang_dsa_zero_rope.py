@@ -68,8 +68,17 @@ class TestPackedRowInference(CustomTestCase):
         self.assertTrue(
             can_use_glm53_triton_sparse_attention(**base, num_tokens=None, num_heads=16)
         )
+        self.assertTrue(
+            can_use_glm53_triton_sparse_attention(
+                **(base | dict(kv_dtype=torch.float8_e4m3fn)),
+                num_tokens=8192,
+                num_heads=16,
+            )
+        )
 
         for override in (
+            dict(num_tokens=8192, num_heads=16, kv_dtype=torch.float8_e4m3fnuz),
+            dict(num_tokens=8192, num_heads=16, kv_dtype=torch.float32),
             dict(num_tokens=65537, num_heads=16),
             dict(num_tokens=131073, num_heads=8),
             dict(num_tokens=8192, num_heads=16, topk_width=2048),

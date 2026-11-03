@@ -714,9 +714,9 @@ class DeepseekSparseAttnBackend(
             )
             if not self._triton_kpool_tail_supported:
                 raise ValueError(
-                    "Triton with index_kpool > 1 is only validated for GLM-5.3 "
-                    "on gfx950 with BF16 Q/KV, 8 or 16 query heads, zero-width "
-                    "RoPE, 512-wide Q/KV/output, index_topk=2048, "
+                    "Triton with index_kpool > 1 is only validated for "
+                    "GLM-5.3-Flash on gfx950 with BF16 Q, BF16 or FP8 e4m3 KV, 8 or 16 query "
+                    "heads, zero-width RoPE, 512-wide Q/KV/output, index_topk=2048, "
                     "and index_kpool=4; got "
                     f"model_dtype={model_runner.dtype}, "
                     f"kv_cache_dtype={self.kv_cache_dtype}, "
@@ -729,7 +729,10 @@ class DeepseekSparseAttnBackend(
                 )
         if (
             "aiter_sparse_mla" in (self.dsa_prefill_impl, self.dsa_decode_impl)
-            and not self._triton_kpool_tail_supported
+            and (
+                not self._triton_kpool_tail_supported
+                or self.kv_cache_dtype != torch.bfloat16
+            )
         ):
             raise ValueError(
                 "aiter_sparse_mla is only validated for GLM-5.3 on gfx950 with "

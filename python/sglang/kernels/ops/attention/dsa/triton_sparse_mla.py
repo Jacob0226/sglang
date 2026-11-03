@@ -62,7 +62,7 @@ def can_use_glm53_triton_sparse_attention(
     return (
         (_IS_GFX95 if is_gfx95 is None else is_gfx95)
         and q_dtype == torch.bfloat16
-        and kv_dtype == torch.bfloat16
+        and kv_dtype in (torch.bfloat16, torch.float8_e4m3fn)
         and max_tokens is not None
         and (num_tokens is None or 0 < num_tokens <= max_tokens)
         and q_nope_dim == 512
