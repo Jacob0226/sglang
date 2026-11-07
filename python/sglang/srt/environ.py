@@ -2093,6 +2093,9 @@ class Envs:
 
     # cache, GEMM, and distributed
     SGLANG_OPT_FP8_WO_A_GEMM = EnvBool(True)
+    # Opt-in PTPC FP8 repacking for selected BF16 GLM-5.3-Flash KDA
+    # projections. Comma-separated module names; empty keeps BF16.
+    SGLANG_OPT_GLM53_KDA_PTPC_MODULES = EnvTuple(tuple())
     # Fuse inverse RoPE into wo_a activation quantization: CUDA UE8M0 JIT
     # or ROCm gfx950 aiter inverse_rope_group_quant. Off by default;
     # requires the corresponding FP8 wo_a path.
