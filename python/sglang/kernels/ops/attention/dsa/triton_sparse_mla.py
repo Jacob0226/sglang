@@ -63,8 +63,8 @@ def can_use_glm53_triton_sparse_attention(
     natural_topk_width = dsa_index_topk + dsa_index_kpool - 1
     return (
         (_IS_GFX95 if is_gfx95 is None else is_gfx95)
-        and q_dtype == torch.bfloat16
-        and kv_dtype == torch.bfloat16
+        and kv_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+        and q_dtype in (torch.bfloat16, kv_dtype)
         and max_tokens is not None
         and (num_tokens is None or 0 < num_tokens <= max_tokens)
         and q_nope_dim == 512
@@ -305,14 +305,24 @@ def _is_gfx950_sparse_mla_fp8(
     d_v: int,
     d_tail: int,
     kv_dim: int,
+    seq: int | None = None,
 ) -> bool:
-    """Gate for gfx950 FP8 prefill tuning in the TP4/TP8 DSA shapes."""
+    """Gate for gfx950 FP8 prefill tuning in the TP4/TP8 DSA shapes.
+
+    GLM-5.3's zero-RoPE FP8 E4M3 prefill (``seq`` given) only beats the
+    untuned path from 128 rows, and with 16 heads only up to 512 rows.
+    """
+    if kv_dtype == torch.bfloat16 or H not in (8, 16) or d_v != 512:
+        return False
+    if d_tail == 64 and kv_dim == 576:
+        return is_gfx95_supported()
     return (
-        kv_dtype != torch.bfloat16
-        and H in (8, 16)
-        and d_v == 512
-        and d_tail == 64
-        and kv_dim == 576
+        seq is not None
+        and kv_dtype == torch.float8_e4m3fn
+        and d_tail == 0
+        and kv_dim == 512
+        and 128 <= seq
+        and (H == 8 or seq <= 512)
         and is_gfx95_supported()
     )
 
@@ -370,6 +380,7 @@ def _row_strides(x: torch.Tensor) -> tuple[torch.Tensor, int, int]:
 def _prune_configs(configs, named_args, **kwargs):
     """Drop wasteful configs and retain the established FP8 search space."""
     topk = named_args["topk"]
+    # The GLM-5.3 config is also the measured best for an FP8 E4M3 KV cache.
     if can_use_glm53_triton_sparse_attention(
         q_dtype=torch.bfloat16,
         kv_dtype=torch.bfloat16,
@@ -505,9 +516,9 @@ def _sparse_mla_fwd_split_dim_kernel(
         if NUM_GROUPS >= 4:
             kv3 = _load_kv_group(kbase, valid, 3, D_V, KV_SCALED).to(input_type)
         if D_TAIL > 0:
-            kv_tail = _load_kv_tail(kbase, valid, D_V, D_TAIL, NUM_GROUPS, KV_SCALED).to(
-                        input_type
-                    )
+            kv_tail = _load_kv_tail(
+                kbase, valid, D_V, D_TAIL, NUM_GROUPS, KV_SCALED
+            ).to(input_type)
 
         qk = tl.dot(q0, tl.trans(kv0))
         if NUM_GROUPS >= 2:
@@ -822,9 +833,9 @@ def _sparse_mla_fused_kernel(
         if NUM_GROUPS >= 4:
             kv3 = _load_kv_group(kv_base, valid, 3, D_V, KV_SCALED).to(input_type)
         if D_TAIL > 0:
-            kv_tail = _load_kv_tail(kv_base, valid, D_V, D_TAIL, NUM_GROUPS, KV_SCALED).to(
-                        input_type
-                    )
+            kv_tail = _load_kv_tail(
+                kv_base, valid, D_V, D_TAIL, NUM_GROUPS, KV_SCALED
+            ).to(input_type)
 
         scores = tl.dot(q0, tl.trans(kv0))
         if NUM_GROUPS >= 2:
@@ -1022,9 +1033,9 @@ def _sparse_mla_split_k_kernel(
         if NUM_GROUPS >= 4:
             kv3 = _load_kv_group(kv_base, valid, 3, D_V, KV_SCALED).to(input_type)
         if D_TAIL > 0:
-            kv_tail = _load_kv_tail(kv_base, valid, D_V, D_TAIL, NUM_GROUPS, KV_SCALED).to(
-                        input_type
-                    )
+            kv_tail = _load_kv_tail(
+                kv_base, valid, D_V, D_TAIL, NUM_GROUPS, KV_SCALED
+            ).to(input_type)
 
         scores = tl.dot(q0, tl.trans(kv0))
         if NUM_GROUPS >= 2:
@@ -1214,7 +1225,9 @@ def _triton_sparse_mla_fwd_splitk(
     h_padded = n_head_blocks * BLOCK_H
     num_cu = _cu_count(q_nope.device)
     base_ctas = seq * n_head_blocks
-    optimize_gfx950_fp8 = _is_gfx950_sparse_mla_fp8(kv.dtype, H, d_v, d_tail, kv_dim)
+    optimize_gfx950_fp8 = _is_gfx950_sparse_mla_fp8(
+        kv.dtype, H, d_v, d_tail, kv_dim, seq
+    )
 
     num_groups = d_v // 128
     assert num_groups <= 4, (
@@ -1367,7 +1380,7 @@ def triton_sparse_mla_fwd(
     head_blocks = max(1, (H + BLOCK_H - 1) // BLOCK_H)
     base_ctas = seq * head_blocks
     optimize_gfx950_fp8 = _is_gfx950_sparse_mla_fp8(
-        kv.dtype, H, d_v, q_rope.shape[-1], kv.shape[-1]
+        kv.dtype, H, d_v, q_rope.shape[-1], kv.shape[-1], seq
     )
     use_topk_length = (
         optimize_gfx950_fp8
