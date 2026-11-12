@@ -2058,6 +2058,19 @@ def _biased_grouped_topk_postprocess(
     return topk_ids
 
 
+def _aiter_uses_jit_router(
+    num_expert_group: Optional[int], topk_group: Optional[int], dynamic_bias: bool
+) -> bool:
+    """Single-group biased routing on aiter goes through the Triton router, which
+    also writes the fused shared-expert columns."""
+    return (
+        _use_aiter
+        and not dynamic_bias
+        and (num_expert_group or 1) == 1
+        and (topk_group or 1) == 1
+    )
+
+
 def biased_grouped_topk_gpu(
     hidden_states: torch.Tensor,
     gating_output: torch.Tensor,
@@ -2080,14 +2093,20 @@ def biased_grouped_topk_gpu(
     # topk for routed experts only (shared experts are appended separately below)
     topk_routed = topk - num_fused_shared_experts
     # The JIT router accepts one shared bias vector, not per-token bias rows.
-    if (
-        not dynamic_bias
-        and (
-            (_is_cuda and num_expert_group and num_expert_group > 1)
-            # ROCm also admits single-group routing; CUDA's condition is unchanged.
-            or (_is_hip and num_expert_group)
+    # On ROCm it is the default for single-group routing: one launch replaces the
+    # fp32 cast, aiter biased_grouped_topk and the shared-expert append (GLM-5.3-Flash,
+    # 288 experts top-8 + 1 shared: 9.2-9.5 -> 4.7 us at 6-96 rows on MI355X).
+    if not dynamic_bias and (
+        (
+            (
+                (_is_cuda and num_expert_group and num_expert_group > 1)
+                # ROCm also admits single-group routing; CUDA's condition is unchanged.
+                or (_is_hip and num_expert_group)
+            )
+            and envs.SGLANG_OPT_USE_JIT_KERNEL_GROUPED_TOPK.get()
         )
-    ) and envs.SGLANG_OPT_USE_JIT_KERNEL_GROUPED_TOPK.get():
+        or _aiter_uses_jit_router(num_expert_group, topk_group, dynamic_bias)
+    ):
         # Opt-in: unified Triton router for DeepSeek-V3 grouped routing. Bit-exact
         # with the flashinfer/AOT paths on DeepSeek-V3.2 e2e (validated); handles any
         # experts-per-group (no <=32 cap). Off by default — see the env-var comment.
@@ -3051,6 +3070,15 @@ def select_experts(
     if _use_aiter or has_per_rank_fused_shared_slots(num_shared_topk_slots):
         top_k_for_gate = num_routed_topk
         num_shared_topk_slots_for_gate = 0
+        # The Triton router writes the shared columns itself, so the append is skipped.
+        if (
+            use_grouped_topk
+            and correction_bias is not None
+            and dynamic_expert_bias is None
+            and not has_per_rank_fused_shared_slots(num_shared_topk_slots)
+            and _aiter_uses_jit_router(num_expert_group, topk_group, False)
+        ):
+            num_shared_topk_slots_for_gate = num_shared_topk_slots
     else:
         top_k_for_gate = top_k
         num_shared_topk_slots_for_gate = num_shared_topk_slots
