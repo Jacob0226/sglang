@@ -2224,6 +2224,9 @@ class Envs:
     SGLANG_DSA_TOPK_FLASHINFER_TIE_BREAK = EnvStr(None)
     SGLANG_DSA_PREFILL_DENSE_ATTN_KV_LEN_THRESHOLD = EnvInt(2048)
     SGLANG_DSA_HIP_DISABLE_PRESHUFFLE = EnvBool(False)
+    # ROCm k-pool target verify: score a request's draft rows as one AITER paged-MQA
+    # query (next_n = draft tokens) instead of one flattened query per row.
+    SGLANG_OPT_DSA_KPOOL_VERIFY_NEXTN = EnvBool(False)
     SGLANG_DSA_MQA_LOGITS_FREE_MEM_FRACTION = EnvFloat(0.2)
     SGLANG_ENABLE_PCG_DSV2_DUAL_STREAM = EnvBool(False)
     SGLANG_DSA_TOPK_BROADCAST = EnvBool(False)
