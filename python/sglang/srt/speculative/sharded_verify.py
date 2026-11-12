@@ -43,11 +43,26 @@ else:
 
 def spec_allows_vocab_shards(spec) -> bool:
     """Whether the server's verify rule can accept or reject on shard keys."""
-    return (
-        not spec.speculative_use_rejection_sampling
-        and spec.speculative_accept_threshold_single == 1.0
+    if spec.speculative_use_rejection_sampling:
+        return False
+    from sglang.srt.utils import is_hip
+
+    # HIP verify without rejection sampling is argmax and never reads the thresholds.
+    return is_hip() or (
+        spec.speculative_accept_threshold_single == 1.0
         and spec.speculative_accept_threshold_acc == 1.0
     )
+
+
+def _verify_commits_argmax(info) -> bool:
+    """Whether verify commits the argmax of every row: greedy batches, and any batch
+    on HIP without rejection sampling (see eagle_utils._verify_uses_greedy)."""
+    if info.is_all_greedy:
+        return True
+    from sglang.srt.runtime_context import get_spec
+    from sglang.srt.utils import is_hip
+
+    return is_hip() and not get_spec().speculative_use_rejection_sampling
 
 
 def sampling_allows_vocab_shards(
@@ -70,7 +85,7 @@ def sampling_allows_vocab_shards(
         and info.acc_scaling_penalties is None
         and info.logit_bias is None
         and (
-            info.is_all_greedy
+            _verify_commits_argmax(info)
             or (
                 has_local_keys
                 and not (
@@ -676,6 +691,16 @@ def reduce_sharded_token_keys(
             f"keys shape {tuple(keys.shape)} is incompatible with splits={splits}"
         )
     world = tp_group.world_size
+    if keys.is_cuda and torch.version.hip is not None:
+        # No NVLink exchanges here. The aiter custom all-gather takes 32-bit
+        # dtypes only, and a gather moves bits unchanged.
+        gathered = torch.empty(
+            world * keys.numel(), dtype=torch.int64, device=keys.device
+        )
+        tp_group.all_gather_into_tensor(
+            gathered.view(torch.float32), keys.view(-1).view(torch.float32)
+        )
+        return keys_to_tokens(gathered, world, splits)
     power_of_two_world = world > 0 and (world & (world - 1)) == 0
     if 0 < keys.shape[0] <= _LL_MAX_ROWS and world <= 16 and power_of_two_world:
         tokens = _ll_keys(keys, tp_group)

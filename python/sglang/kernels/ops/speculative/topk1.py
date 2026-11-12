@@ -150,6 +150,154 @@ def draft_topk1_postprocess(
     return topk_p, topk_index
 
 
+_SHARD_CANDIDATE_WIDTH = 4
+
+
+@triton.jit
+def _draft_topk1_shard_candidate_kernel(
+    partial_vals,
+    partial_indices,
+    candidates,
+    col_offset,
+    num_splits: tl.constexpr,
+    BLOCK: tl.constexpr,
+    WIDTH: tl.constexpr,
+):
+    row = tl.program_id(0)
+    offsets = tl.arange(0, BLOCK)
+    mask = offsets < num_splits
+    vals = tl.load(
+        partial_vals + row * num_splits + offsets,
+        mask=mask,
+        other=-float("inf"),
+    )
+    split = tl.argmax(vals, axis=0)
+    index = tl.load(partial_indices + row * num_splits + split) + col_offset
+    tl.store(candidates + row * WIDTH, tl.max(vals, axis=0))
+    tl.store(candidates + row * WIDTH + 1, index.to(tl.float32))
+
+
+@triton.jit
+def _draft_topk1_rank_finalize_kernel(
+    candidates,
+    topk_p,
+    topk_index,
+    positions,
+    draft_tokens,
+    draft_tokens_stride,
+    draft_token_column,
+    num_rows,
+    world_size: tl.constexpr,
+    WRITE_DRAFT_TOKEN: tl.constexpr,
+    BLOCK: tl.constexpr,
+    WIDTH: tl.constexpr,
+):
+    row = tl.program_id(0)
+    ranks = tl.arange(0, BLOCK)
+    mask = ranks < world_size
+    vals = tl.load(
+        candidates + (ranks * num_rows + row) * WIDTH,
+        mask=mask,
+        other=-float("inf"),
+    )
+    # Ranks hold ascending vocab ranges, so the lowest rank on a tie is the
+    # lowest token id, as in draft_topk1_postprocess.
+    rank = tl.argmax(vals, axis=0)
+    index = tl.load(candidates + (rank * num_rows + row) * WIDTH + 1).to(tl.int64)
+    tl.store(topk_index + row, index)
+    tl.store(topk_p + row, 1.0)
+    if WRITE_DRAFT_TOKEN:
+        tl.store(draft_tokens + row * draft_tokens_stride + draft_token_column, index)
+
+    position = tl.load(positions + row)
+    tl.store(positions + row, position + 1)
+
+
+def draft_topk1_postprocess_sharded(
+    shard_logits: torch.Tensor,
+    vocab_shard,
+    positions: torch.Tensor,
+    draft_tokens: torch.Tensor | None = None,
+    draft_token_column: int = 0,
+):
+    """``draft_topk1_postprocess`` over this TP rank's vocab shard.
+
+    Each rank reduces its shard to one ``(max, token id)`` per row and only
+    those are all-gathered, instead of the full logits. Picks the same token as
+    the gathered path, ties included.
+    """
+    from sglang.srt.runtime_context import get_parallel
+
+    assert shard_logits.ndim == 2
+    assert shard_logits.stride(1) == 1
+    assert positions.ndim == 1 and positions.is_contiguous()
+    assert positions.shape[0] == shard_logits.shape[0]
+    assert vocab_shard.vocab_size < 2**24
+    write_draft_token = draft_tokens is not None
+    if write_draft_token:
+        assert draft_tokens.dtype == torch.long
+        assert draft_tokens.shape[0] == shard_logits.shape[0]
+        assert draft_tokens.stride(1) == 1
+
+    device = shard_logits.device
+    bs = shard_logits.shape[0]
+    topk_p = torch.empty((bs, 1), dtype=torch.float32, device=device)
+    topk_index = torch.empty((bs, 1), dtype=torch.int64, device=device)
+    if bs == 0:
+        return topk_p, topk_index
+
+    block = _DRAFT_TOPK1_BLOCK
+    num_splits = triton.cdiv(vocab_shard.valid, block)
+    partial_vals = torch.empty((bs, num_splits), dtype=torch.float32, device=device)
+    partial_indices = torch.empty((bs, num_splits), dtype=torch.int32, device=device)
+    _draft_topk1_partial_argmax_kernel[(bs, num_splits)](
+        shard_logits,
+        partial_vals,
+        partial_indices,
+        shard_logits.stride(0),
+        vocab_shard.valid,
+        num_splits,
+        BLOCK=block,
+        num_warps=8,
+    )
+    # Rows padded to 16 bytes for the custom all-gather.
+    candidates = torch.zeros(
+        (bs, _SHARD_CANDIDATE_WIDTH), dtype=torch.float32, device=device
+    )
+    _draft_topk1_shard_candidate_kernel[(bs,)](
+        partial_vals,
+        partial_indices,
+        candidates,
+        vocab_shard.start,
+        num_splits,
+        BLOCK=triton.next_power_of_2(num_splits),
+        WIDTH=_SHARD_CANDIDATE_WIDTH,
+        num_warps=1,
+    )
+    group = get_parallel().tp_group
+    world_size = group.world_size
+    gathered = torch.empty(
+        (world_size * bs, _SHARD_CANDIDATE_WIDTH), dtype=torch.float32, device=device
+    )
+    group.all_gather_into_tensor(gathered, candidates)
+    _draft_topk1_rank_finalize_kernel[(bs,)](
+        gathered,
+        topk_p,
+        topk_index,
+        positions,
+        draft_tokens if write_draft_token else topk_index,
+        draft_tokens.stride(0) if write_draft_token else 0,
+        draft_token_column,
+        bs,
+        world_size,
+        WRITE_DRAFT_TOKEN=write_draft_token,
+        BLOCK=triton.next_power_of_2(world_size),
+        WIDTH=_SHARD_CANDIDATE_WIDTH,
+        num_warps=1,
+    )
+    return topk_p, topk_index
+
+
 def draft_topk1_argmax_only(next_token_logits: torch.Tensor):
     """Select top-k=1 without mutating caller-owned positions."""
     # The upstream finalizer always advances positions. Draft-extend has already

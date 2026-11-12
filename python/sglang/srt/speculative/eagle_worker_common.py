@@ -112,6 +112,7 @@ STOCK_SPECULATIVE_RUNTIME_HOOKS = stock_speculative_runtime_hooks()
 
 _SHARDED_VERIFY_TARGET_MODEL_CLASSES = frozenset(
     {
+        "Glm5NextForConditionalGeneration",
         "Qwen3_5ForCausalLM",
         "Qwen3_5MoeForCausalLM",
         "Qwen3_5ForConditionalGeneration",

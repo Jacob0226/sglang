@@ -570,8 +570,10 @@ class LogitsProcessor(nn.Module):
         # Set before graph capture by a speculative worker that finishes the TP
         # gather itself (see finish_deferred_gather / deferred_argmax).
         self.defer_verify_gather = False
+        # HIP verify without rejection sampling commits argmax for every row, so
+        # it needs no runtime switch to keep its logits as shards.
         self._sharded_verify_eligible = (
-            _runtime_optimized_vocab_shards_enabled()
+            (_runtime_optimized_vocab_shards_enabled() or is_hip())
             and self.do_tensor_parallel_all_gather
             and not self.use_attn_tp_group
             and not self.do_tensor_parallel_all_gather_dp_attn
@@ -584,6 +586,9 @@ class LogitsProcessor(nn.Module):
         # full-vocabulary gather even when the runtime master switch is on.
         self.sharded_verify = False
         self._sharded_verify_temperature_keys = False
+        # Set by a topk=1 greedy draft worker that argmaxes the vocab shards
+        # itself (see draft_topk1_postprocess_sharded).
+        self.draft_decode_vocab_shards = False
         self.final_logit_softcapping = getattr(
             self.config, "final_logit_softcapping", None
         )
@@ -781,6 +786,8 @@ class LogitsProcessor(nn.Module):
 
         if not logits_metadata.extend_return_logprob:
             vocab_shard = self._verify_vocab_shard(lm_head, logits_metadata)
+            if vocab_shard is None:
+                vocab_shard = self._draft_decode_vocab_shard(lm_head, logits_metadata)
             if vocab_shard is not None:
                 return LogitsProcessorOutput(
                     next_token_logits=self._get_shard_logits(
@@ -834,7 +841,30 @@ class LogitsProcessor(nn.Module):
             and logits_metadata.verify_vocab_shards
             and not self.defer_verify_gather
             and logits_metadata.forward_mode.is_target_verify()
-            and self.final_logit_softcapping is None
+            and isinstance(lm_head, VocabParallelEmbedding)
+            and lm_head.shard_indices.num_added_elements_padded == 0
+        ):
+            return None
+        from sglang.srt.speculative.sharded_verify import VocabShard
+
+        indices = lm_head.shard_indices
+        return VocabShard(
+            start=indices.org_vocab_start_index,
+            valid=indices.num_org_elements,
+            vocab_size=self.vocab_size,
+        )
+
+    def _draft_decode_vocab_shard(
+        self, lm_head: VocabParallelEmbedding, logits_metadata: LogitsMetadata
+    ):
+        """The VocabShard a draft decode keeps its logits in, or None for the gather."""
+        if not (
+            self.draft_decode_vocab_shards
+            and logits_metadata.forward_mode.is_decode()
+            and self.do_tensor_parallel_all_gather
+            and not self.use_attn_tp_group
+            and not self.do_tensor_parallel_all_gather_dp_attn
+            and not self.use_tp_lm_head_all_to_all
             and isinstance(lm_head, VocabParallelEmbedding)
             and lm_head.shard_indices.num_added_elements_padded == 0
         ):
@@ -860,6 +890,13 @@ class LogitsProcessor(nn.Module):
         logits = self._compute_lm_head(hidden_states, lm_head, out=out)
         if self.logit_scale is not None:
             logits.mul_(self.logit_scale)
+        if self.final_logit_softcapping is not None:
+            # The FP32 values the gathered path softcaps, so argmax ties match it.
+            logits = softcap_to_float32_logits(
+                logits,
+                self.final_logit_softcapping,
+                torch.empty_like(logits, dtype=torch.float32),
+            )
         return logits
 
     def _borrow_shard_logits_buffer(

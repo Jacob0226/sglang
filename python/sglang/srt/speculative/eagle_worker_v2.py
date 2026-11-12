@@ -8,6 +8,7 @@ import torch
 from sglang.kernels.ops.speculative.topk1 import (
     draft_topk1_argmax_only,
     draft_topk1_postprocess,
+    draft_topk1_postprocess_sharded,
 )
 from sglang.srt.configs.model_config import get_dsa_mtp_topk_width
 from sglang.srt.environ import envs
@@ -257,6 +258,7 @@ class EagleDraftWorker(EagleDraftWorkerBase):
         )
         self.init_token_map()
         self.init_lm_head()
+        self._maybe_shard_draft_decode_logits()
 
         if get_spec().speculative_use_rejection_sampling:
             target_vocab_size = self.target_worker.model_config.vocab_size
@@ -382,6 +384,20 @@ class EagleDraftWorker(EagleDraftWorkerBase):
             # Share the embedding and lm_head
             self.draft_runner.model.set_embed_and_head(embed, head)
             maybe_share_target_lm_head()
+
+    def _maybe_shard_draft_decode_logits(self):
+        # Greedy topk=1 drafts only need each row's argmax, so the draft decode
+        # LM head can stay vocab-sharded; draft_forward reduces the shards.
+        logits_processor = getattr(self.draft_runner.model, "logits_processor", None)
+        if (
+            logits_processor is not None
+            and hasattr(logits_processor, "draft_decode_vocab_shards")
+            and self.topk == 1
+            and (_is_cuda or _is_hip)
+            and self.hot_token_id is None
+            and not get_spec().speculative_use_rejection_sampling
+        ):
+            logits_processor.draft_decode_vocab_shards = True
 
     def _resolve_shared_embed_and_head(self):
         target_runner = self.target_worker.model_runner
@@ -875,7 +891,16 @@ class EagleDraftWorker(EagleDraftWorkerBase):
                     draft_probs_list.append(probs)
                     forward_batch.positions.add_(1)
                 elif self.topk == 1:
-                    if _is_cuda or _is_hip:
+                    vocab_shard = logits_output.next_token_logits_vocab_shard
+                    if vocab_shard is not None:
+                        topk_p, topk_index = draft_topk1_postprocess_sharded(
+                            logits_output.next_token_logits,
+                            vocab_shard,
+                            forward_batch.positions,
+                            draft_tokens_topk1,
+                            i + 1,
+                        )
+                    elif _is_cuda or _is_hip:
                         topk_p, topk_index = draft_topk1_postprocess(
                             logits_output.next_token_logits,
                             forward_batch.positions,
@@ -898,11 +923,16 @@ class EagleDraftWorker(EagleDraftWorkerBase):
                     forward_batch.positions.add_(1)
                 if self.draft_runner.model_config.model_is_mrope:
                     forward_batch.mrope_positions.add_(1)
+                vocab_size = (
+                    logits_output.next_token_logits_vocab_shard.vocab_size
+                    if logits_output.next_token_logits_vocab_shard is not None
+                    else logits_output.next_token_logits.shape[-1]
+                )
                 maybe_detect_oob(
                     topk_index,
                     0,
-                    logits_output.next_token_logits.shape[-1],
-                    f"draft_forward step {i}: topk_index OOB vs vocab_size={logits_output.next_token_logits.shape[-1]}",
+                    vocab_size,
+                    f"draft_forward step {i}: topk_index OOB vs vocab_size={vocab_size}",
                 )
                 if self.hot_token_id is not None:
                     topk_index = self.hot_token_id[topk_index]

@@ -296,6 +296,162 @@ fast_topk_cuda_tl_impl(const float* __restrict__ input, int* __restrict__ index,
   }
 }
 
+#ifdef USE_ROCM
+inline constexpr int kWaveSize = 64;
+#define SGL_KPOOL_SHFL_DOWN(v, d) __shfl_down(v, d)
+#define SGL_KPOOL_SHFL_XOR(v, d) __shfl_xor(v, d)
+#else
+inline constexpr int kWaveSize = 32;
+#define SGL_KPOOL_SHFL_DOWN(v, d) __shfl_down_sync(0xffffffffu, v, d)
+#define SGL_KPOOL_SHFL_XOR(v, d) __shfl_xor_sync(0xffffffffu, v, d)
+#endif
+
+// Rows up to this many groups are selected from registers; longer rows take
+// fast_topk_cuda_tl_impl.
+inline constexpr int kRegItems = 16;
+inline constexpr int kRegMaxLength = kRegItems * kThreadsPerBlock;
+// Decode and verify sized launches. With many rows per launch the fixed-digit
+// path keeps up again unless its threshold bin overflows.
+inline constexpr unsigned kRegMaxRows = 512;
+
+// Radix select over keys held in registers. The first digit starts at the highest bit
+// where the row's keys differ, so a row whose scores share a narrow range still spreads
+// over the histogram; fast_topk_cuda_tl_impl buckets on fixed fp16 bits and falls into
+// its full-row rescans for such rows. Ties at the threshold key are taken in arbitrary
+// order, as there.
+// The first digit is wider than the later ones: it is the only pass over every key, and
+// a wider histogram there keeps the LDS atomics from piling onto a few bins.
+template <int K>
+__device__ void register_topk_impl(const float* __restrict__ row, int* __restrict__ index, int length) {
+  constexpr int kFirstDigitBits = 11;
+  constexpr int kDigitBits = 8;
+  constexpr int RADIX = 1 << kFirstDigitBits;
+  constexpr int kWaves = kThreadsPerBlock / kWaveSize;
+  constexpr int kBinsPerLane = RADIX / kWaveSize;
+  __shared__ int s_hist[RADIX];
+  __shared__ uint32_t s_red_max[kWaves];
+  __shared__ uint32_t s_red_min[kWaves];
+  __shared__ uint32_t s_kmax, s_kmin;
+  __shared__ int s_digit, s_above, s_eq;
+  __shared__ int s_cnt_gt, s_cnt_eq;
+
+  const int tx = threadIdx.x;
+  const int lane = tx % kWaveSize;
+  const int wave = tx / kWaveSize;
+
+  uint32_t keys[kRegItems];
+  uint32_t kmax = 0, kmin = 0xffffffffu;
+#pragma unroll
+  for (int i = 0; i < kRegItems; ++i) {
+    const int idx = i * kThreadsPerBlock + tx;
+    uint32_t key = 0;
+    if (idx < length) {
+      key = convert_to_uint32(row[idx]);
+      kmax = key > kmax ? key : kmax;
+      kmin = key < kmin ? key : kmin;
+    }
+    keys[i] = key;
+  }
+#pragma unroll
+  for (int off = kWaveSize / 2; off > 0; off >>= 1) {
+    const uint32_t omax = SGL_KPOOL_SHFL_XOR(kmax, off);
+    const uint32_t omin = SGL_KPOOL_SHFL_XOR(kmin, off);
+    kmax = omax > kmax ? omax : kmax;
+    kmin = omin < kmin ? omin : kmin;
+  }
+  if (lane == 0) {
+    s_red_max[wave] = kmax;
+    s_red_min[wave] = kmin;
+  }
+  __syncthreads();
+  if (tx == 0) {
+    uint32_t a = 0, b = 0xffffffffu;
+    for (int w = 0; w < kWaves; ++w) {
+      a = s_red_max[w] > a ? s_red_max[w] : a;
+      b = s_red_min[w] < b ? s_red_min[w] : b;
+    }
+    s_kmax = a;
+    s_kmin = b;
+    s_cnt_gt = 0;
+    s_cnt_eq = 0;
+  }
+  __syncthreads();
+
+  const uint32_t diff = s_kmax ^ s_kmin;
+  // Bits [lo, 31] are fixed to `prefix`; 64-bit so that a shift by 32 is defined.
+  int hi = diff == 0 ? -1 : 31 - __clz(static_cast<int>(diff));
+  int lo = hi + 1;
+  uint64_t prefix = static_cast<uint64_t>(s_kmax) >> lo;
+  int needed = K;
+  bool take_all_eq = hi < 0;
+  int digit_bits = kFirstDigitBits;
+  while (!take_all_eq && hi >= 0) {
+    lo = hi >= digit_bits - 1 ? hi - (digit_bits - 1) : 0;
+    digit_bits = kDigitBits;
+    const int width = hi - lo + 1;
+    const uint32_t digit_mask = (1u << width) - 1u;
+    for (int b = tx; b < RADIX; b += kThreadsPerBlock)
+      s_hist[b] = 0;
+    __syncthreads();
+#pragma unroll
+    for (int i = 0; i < kRegItems; ++i) {
+      const int idx = i * kThreadsPerBlock + tx;
+      if (idx < length && (static_cast<uint64_t>(keys[i]) >> (hi + 1)) == prefix) {
+        ::atomicAdd(&s_hist[(keys[i] >> lo) & digit_mask], 1);
+      }
+    }
+    __syncthreads();
+    if (wave == 0) {
+      // Bins are read twice rather than held, to keep the block within the
+      // register budget of two resident blocks per CU.
+      const int* lane_bins = s_hist + lane * kBinsPerLane;
+      int v = 0;
+#pragma unroll
+      for (int j = 0; j < kBinsPerLane; ++j) {
+        v += lane_bins[j];
+      }
+      int x = v;
+#pragma unroll
+      for (int off = 1; off < kWaveSize; off <<= 1) {
+        const int t = SGL_KPOOL_SHFL_DOWN(x, off);
+        if (lane + off < kWaveSize) x += t;
+      }
+      int above = x - v;
+#pragma unroll
+      for (int j = kBinsPerLane - 1; j >= 0; --j) {
+        const int count = lane_bins[j];
+        const int suffix = above + count;
+        if (suffix >= needed && above < needed) {
+          s_digit = lane * kBinsPerLane + j;
+          s_above = above;
+          s_eq = count;
+        }
+        above = suffix;
+      }
+    }
+    __syncthreads();
+    needed -= s_above;
+    prefix = (prefix << width) | static_cast<uint64_t>(s_digit);
+    take_all_eq = s_eq == needed;
+    hi = lo - 1;
+    __syncthreads();
+  }
+
+#pragma unroll
+  for (int i = 0; i < kRegItems; ++i) {
+    const int idx = i * kThreadsPerBlock + tx;
+    if (idx >= length) continue;
+    const uint64_t key_prefix = static_cast<uint64_t>(keys[i]) >> lo;
+    if (key_prefix > prefix) {
+      index[::atomicAdd(&s_cnt_gt, 1)] = idx;
+    } else if (key_prefix == prefix) {
+      const int e = ::atomicAdd(&s_cnt_eq, 1);
+      if (e < needed) index[K - needed + e] = idx;
+    }
+  }
+  __syncthreads();
+}
+
 __device__ __forceinline__ int32_t transform_kpool_token(
     int32_t raw_token,
     const int32_t* __restrict__ page_table_entry,
@@ -356,7 +512,11 @@ __global__ __launch_bounds__(kThreadsPerBlock) void kpool_topk_transform_kernel(
   }
 
   __shared__ int s_indices[K];
-  fast_topk_cuda_tl_impl<K>(score, s_indices, row_start, length);
+  if (length <= kRegMaxLength && gridDim.x <= kRegMaxRows) {
+    register_topk_impl<K>(score + row_start, s_indices, length);
+  } else {
+    fast_topk_cuda_tl_impl<K>(score, s_indices, row_start, length);
+  }
   for (int col = tid; col < out_cols; col += kThreadsPerBlock) {
     if (col < history_len) {
       const auto group_rank = col / pool_size;

@@ -722,7 +722,7 @@ def _sharded_sampling_applies(
     stays on the stock gathered path.
     """
     return (
-        _is_cuda
+        (_is_cuda or _is_hip)
         and verify_input.tree_topk == 1
         and grammar_mask is None
         and not watermark
