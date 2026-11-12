@@ -109,6 +109,24 @@ class TestFusedHadamardActQuant(CustomTestCase):
                     self.assertTrue(torch.isfinite(y.float()).all().item())
                     self.assertTrue(torch.isfinite(scaled_weights).all().item())
 
+    def test_strided_weights_fold(self):
+        softmax_scale = _BLOCK**-0.5
+        for rows in (1, 64, 4096):
+            with self.subTest(rows=rows):
+                x = self._input(rows, rows)
+                proj = torch.randn(
+                    rows, 2 * _BLOCK + _HEADS, device="cuda", dtype=torch.float32
+                )
+                weights = proj[:, 2 * _BLOCK :]
+                self.assertEqual(weights.stride(0), 2 * _BLOCK + _HEADS)
+                _, scale, scaled_weights = fused_hadamard_act_quant(
+                    x, _BLOCK, "ue8m0", weights=weights, softmax_scale=softmax_scale
+                )
+                expected = weights.unsqueeze(-1) * scale * softmax_scale
+                torch.testing.assert_close(
+                    scaled_weights, expected, rtol=1e-6, atol=1e-7
+                )
+
     def test_cuda_graph_replay(self):
         x = self._input(64, 7)
         weights = torch.randn(

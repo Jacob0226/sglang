@@ -328,21 +328,30 @@ class IndexerKPool(MultiPlatformOp):
             for name in ("wk", "weights_proj")
         )
 
-    def _get_q_k_fused_x_proj(self, q_lora: torch.Tensor, x: torch.Tensor):
+    def _get_q_k_fused_x_proj(
+        self, q_lora: torch.Tensor, x: torch.Tensor, normalize_key: bool = True
+    ):
+        """``normalize_key=False`` returns the fp32 key projection; the caller
+        must apply ``k_norm``."""
         from sglang.kernels.ops.attention.fla.layernorm_gated import _layer_norm_fwd
 
         d = self.head_dim
         proj = torch.mm(x, self.x_proj_weight.t(), out_dtype=torch.float32)
-        key = torch.empty(x.shape[0], d, dtype=torch.bfloat16, device=x.device)
-        _layer_norm_fwd(
-            proj[:, :d],
-            self.k_norm.weight,
-            self.k_norm.bias,
-            self.k_norm.variance_epsilon,
-            out=key,
-        )
+        if normalize_key:
+            key = torch.empty(x.shape[0], d, dtype=torch.bfloat16, device=x.device)
+            _layer_norm_fwd(
+                proj[:, :d],
+                self.k_norm.weight,
+                self.k_norm.bias,
+                self.k_norm.variance_epsilon,
+                out=key,
+            )
+        else:
+            key = proj[:, :d]
         query, _ = self.wq_b(q_lora)
-        query = rotate_activation(rearrange(query, "l (h d) -> l h d", d=d))
+        query = rearrange(query, "l (h d) -> l h d", d=d)
+        if not self.fuse_hadamard_quant:
+            query = rotate_activation(query)
         return query, key, proj[:, d : 2 * d], proj[:, 2 * d :]
 
     def _quant_query(self, query, act_quant, x, head_weights=None):
@@ -1748,9 +1757,16 @@ class IndexerKPool(MultiPlatformOp):
         num_draft_tokens = plan.num_draft_tokens
 
         fused_x_proj = self._use_fused_x_proj()
+        # One launch writes the k-pool (with the key LayerNorm) and quantizes the query.
+        fuse_write_quant = (
+            fused_x_proj
+            and self.fuse_hadamard_quant
+            and not enable_dual_stream
+            and return_indices
+        )
         if fused_x_proj:
             query, key, gate_score_maybe, head_weights = self._get_q_k_fused_x_proj(
-                q_lora, x
+                q_lora, x, normalize_key=not fuse_write_quant
             )
         else:
             query, key, gate_score_maybe, head_weights = self._get_q_k_bf16(
@@ -1774,6 +1790,25 @@ class IndexerKPool(MultiPlatformOp):
 
         buf = pool.get_index_k_with_scale_buffer(layer_id=layer_id)
 
+        key_norm = query_quant = None
+        if fuse_write_quant:
+            from sglang.kernels.ops.attention.dsa.triton_hadamard_quant import (
+                prepare_hadamard_act_quant,
+            )
+
+            key_norm = (
+                self.k_norm.weight,
+                self.k_norm.bias,
+                self.k_norm.variance_epsilon,
+            )
+            query_quant = prepare_hadamard_act_quant(
+                query,
+                self.block_size,
+                self.scale_fmt,
+                head_weights,
+                self.softmax_scale * self.n_heads**-0.5,
+            )
+
         def _compress_write() -> None:
             # Only rows covered by the write plan belong to verify sequences;
             # trailing MoE padding must not update per-request KPool state.
@@ -1796,9 +1831,14 @@ class IndexerKPool(MultiPlatformOp):
                 num_draft_tokens=num_draft_tokens,
                 round_scale=self.scale_fmt is not None,
                 effective_n_per_batch=plan.effective_n_per_batch,
+                key_norm=key_norm,
+                query_quant=query_quant,
             )
 
-        if enable_dual_stream:
+        if fuse_write_quant:
+            _compress_write()
+            q_fp8, q_scale, weights = query_quant[0]
+        elif enable_dual_stream:
             current_stream = torch.cuda.current_stream()
             self.alt_stream.wait_stream(current_stream)
             if gate_score_maybe is not None and not fused_x_proj:

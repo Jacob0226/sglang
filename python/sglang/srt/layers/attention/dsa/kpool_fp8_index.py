@@ -4,6 +4,9 @@ import torch
 import triton
 import triton.language as tl
 
+from sglang.kernels.ops.attention.dsa.triton_hadamard_quant import (
+    _hadamard_quant_block,
+)
 from sglang.srt.environ import envs
 from sglang.srt.layers.attention.dsa.utils import (
     INDEXER_K_CACHE_PRESHUFFLE_TILE,
@@ -1819,6 +1822,22 @@ def _kpool_write_tail_and_maybe_compress_kernel(
     tail_stride_1,
     ape_stride_0,
     write_loc_stride_0,
+    key_ln_w_ptr,
+    key_ln_b_ptr,
+    key_ln_eps,
+    num_kpool_programs,
+    q_x_ptr,
+    q_h_ptr,
+    q_y_ptr,
+    q_s_ptr,
+    q_w_ptr,
+    q_wo_ptr,
+    q_m,
+    q_inv_sqrt_n,
+    q_fp8_max,
+    q_fp8_min,
+    q_softmax_scale,
+    q_w_row_stride,
     N: tl.constexpr,
     POOL_SIZE: tl.constexpr,
     TAIL_SIZE: tl.constexpr,
@@ -1831,8 +1850,40 @@ def _kpool_write_tail_and_maybe_compress_kernel(
     ROUND_SCALE: tl.constexpr,
     HAS_EFFECTIVE_N: tl.constexpr,
     MAX_CLOSED_POOLS: tl.constexpr,
+    KEY_LN: tl.constexpr,
+    KEY_LN_BIAS: tl.constexpr,
+    FUSE_Q: tl.constexpr,
+    Q_W_COLS: tl.constexpr,
+    Q_ROUND_SCALE: tl.constexpr,
+    Q_FUSE_WEIGHTS: tl.constexpr,
+    Q_N: tl.constexpr,
+    Q_BLOCK_M: tl.constexpr,
 ):
     b = tl.program_id(0)
+    if FUSE_Q:
+        # Programs past the k-pool rows quantize the query (independent work).
+        if b >= num_kpool_programs:
+            _hadamard_quant_block(
+                b - num_kpool_programs,
+                q_x_ptr,
+                q_h_ptr,
+                q_y_ptr,
+                q_s_ptr,
+                q_w_ptr,
+                q_wo_ptr,
+                q_m,
+                q_inv_sqrt_n,
+                q_fp8_max,
+                q_fp8_min,
+                q_softmax_scale,
+                q_w_row_stride,
+                Q_W_COLS,
+                Q_ROUND_SCALE,
+                Q_FUSE_WEIGHTS,
+                Q_N,
+                Q_BLOCK_M,
+            )
+            return
     cache_loc_0 = tl.load(out_cache_loc_ptr + b * N)
     if cache_loc_0 == 0:
         return
@@ -1841,10 +1892,29 @@ def _kpool_write_tail_and_maybe_compress_kernel(
     write_start = tl.load(write_start_ptr + b)
     offs = tl.arange(0, BLOCK_D)
     dim_mask = offs < HEAD_DIM
+    if KEY_LN:
+        ln_w = tl.load(key_ln_w_ptr + offs, mask=dim_mask, other=0.0).to(tl.float32)
+        if KEY_LN_BIAS:
+            ln_b = tl.load(key_ln_b_ptr + offs, mask=dim_mask, other=0.0).to(
+                tl.float32
+            )
 
     for i_n in tl.static_range(0, N):
         row = b * N + i_n
-        k = tl.load(key_ptr + row * key_stride_0 + offs, mask=dim_mask)
+        if KEY_LN:
+            # Same math as the fp32 `_layer_norm_fwd` of the key projection.
+            kx = tl.load(
+                key_ptr + row * key_stride_0 + offs, mask=dim_mask, other=0.0
+            ).to(tl.float32)
+            mean = tl.sum(kx, axis=0) / HEAD_DIM
+            kbar = tl.where(dim_mask, kx - mean, 0.0)
+            rstd = tl.rsqrt(tl.sum(kbar * kbar, axis=0) / HEAD_DIM + key_ln_eps)
+            ky = (kx - mean) * rstd * ln_w
+            if KEY_LN_BIAS:
+                ky += ln_b
+            k = ky.to(tail_k_ptr.dtype.element_ty)
+        else:
+            k = tl.load(key_ptr + row * key_stride_0 + offs, mask=dim_mask)
         s = tl.load(score_ptr + row * score_stride_0 + offs, mask=dim_mask)
         phys = (write_start + i_n) % TAIL_SIZE
         dst = req * tail_stride_0 + phys * tail_stride_1 + offs
@@ -1925,21 +1995,27 @@ def kpool_write_tail_and_maybe_compress(
     num_draft_tokens: int,
     round_scale: bool,
     effective_n_per_batch: Optional[torch.Tensor] = None,
+    key_norm: Optional[Tuple[torch.Tensor, Optional[torch.Tensor], float]] = None,
+    query_quant: Optional[Tuple[tuple, tuple, dict, int]] = None,
 ) -> None:
+    """``key_norm=(weight, bias, eps)`` applies the key LayerNorm in the kernel,
+    so ``key`` is the raw fp32 projection. ``query_quant`` is the output of
+    `prepare_hadamard_act_quant`; its blocks run in the same launch."""
     assert num_draft_tokens > 0
     assert key.dim() == 2 and key.shape[1] == INDEX_HEAD_DIM
     assert score.shape == key.shape
     assert tail_k.shape == tail_score.shape
     assert tail_k.shape[1] == pool.index_kpool + pool.tail_extra_slots
     assert tail_k.shape[2] == INDEX_HEAD_DIM
-    assert key.dtype == torch.bfloat16
+    assert key.dtype == (torch.float32 if key_norm is not None else torch.bfloat16)
     assert score.dtype in KPOOL_SCORE_DTYPES
     assert tail_k.dtype == torch.bfloat16
     assert tail_score.dtype in KPOOL_SCORE_DTYPES
     assert ape.dtype == torch.float32
 
     bn = key.shape[0]
-    if bn == 0:
+    num_q_blocks = query_quant[3] if query_quant is not None else 0
+    if bn == 0 and num_q_blocks == 0:
         return
     assert bn % num_draft_tokens == 0
     bs = bn // num_draft_tokens
@@ -1947,7 +2023,8 @@ def kpool_write_tail_and_maybe_compress(
     assert write_loc.shape == (bs, max_closed_pools), write_loc.shape
     assert write_loc.stride(1) == 1, write_loc.stride()
 
-    key = key.contiguous()
+    if key.stride(-1) != 1:
+        key = key.contiguous()
     # The kernel steps rows by score.stride(0): a column slice of a wider GEMM output is fine.
     if score.stride(-1) != 1:
         score = score.contiguous()
@@ -1963,7 +2040,18 @@ def kpool_write_tail_and_maybe_compress(
     index_page_size = pool.index_page_size
     buf_fp8 = buf.view(torch.float8_e4m3fn)
     buf_fp32 = buf.view(torch.float32)
-    _kpool_write_tail_and_maybe_compress_kernel[(bs,)](
+    if key_norm is not None:
+        ln_w, ln_b, ln_eps = key_norm
+    else:
+        ln_w, ln_b, ln_eps = key, None, 0.0
+    if query_quant is not None:
+        _, q_args, q_consts, _ = query_quant
+    else:
+        q_args = (key,) * 6 + (0, 0.0, 0.0, 0.0, 0.0, 0)
+        q_consts = dict(
+            W_COLS=1, ROUND_SCALE=False, FUSE_WEIGHTS=False, N=16, BLOCK_M=16
+        )
+    _kpool_write_tail_and_maybe_compress_kernel[(bs + num_q_blocks,)](
         key,
         score,
         tail_k,
@@ -1983,6 +2071,11 @@ def kpool_write_tail_and_maybe_compress(
         tail_k.stride(1),
         ape.stride(0),
         write_loc.stride(0),
+        ln_w,
+        ln_b if ln_b is not None else ln_w,
+        float(ln_eps),
+        bs,
+        *q_args,
         N=num_draft_tokens,
         POOL_SIZE=pool.index_kpool,
         TAIL_SIZE=tail_k.shape[1],
@@ -1995,4 +2088,8 @@ def kpool_write_tail_and_maybe_compress(
         ROUND_SCALE=round_scale,
         HAS_EFFECTIVE_N=effective_n_per_batch is not None,
         MAX_CLOSED_POOLS=max_closed_pools,
+        KEY_LN=key_norm is not None,
+        KEY_LN_BIAS=ln_b is not None,
+        FUSE_Q=query_quant is not None,
+        **{f"Q_{k}": v for k, v in q_consts.items()},
     )

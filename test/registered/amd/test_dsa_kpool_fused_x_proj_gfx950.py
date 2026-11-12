@@ -70,6 +70,7 @@ def _indexer() -> IndexerKPool:
         indexer.k_norm.weight.uniform_(0.5, 1.5)
         indexer.k_norm.bias.uniform_(-0.1, 0.1)
     indexer.x_proj_weight = None
+    indexer.fuse_hadamard_quant = False
     return indexer
 
 
@@ -82,7 +83,14 @@ class TestKPoolFusedXProj(CustomTestCase):
 
     @torch.no_grad()
     def test_fused_matches_unfused(self):
+        for fuse_hadamard_quant in (False, True):
+            with self.subTest(fuse_hadamard_quant=fuse_hadamard_quant):
+                self._check_fused_matches_unfused(fuse_hadamard_quant)
+
+    def _check_fused_matches_unfused(self, fuse_hadamard_quant):
         indexer = _indexer()
+        # the fused Hadamard quant rotates the query, so neither path may rotate it
+        indexer.fuse_hadamard_quant = fuse_hadamard_quant
         indexer.fuse_x_projections()
         self.assertIsNotNone(indexer.x_proj_weight)
         x = torch.randn(TOKENS, HIDDEN, device="cuda").bfloat16()
@@ -229,6 +237,97 @@ class TestKPoolFusedXProj(CustomTestCase):
         # the tail rounds the fp32 score to bf16, as the unfused bf16 GEMM output would be
         slots = [(3 + i) % tail_size for i in range(n)]
         self.assertTrue(torch.equal(got[2][0, slots], score_slice.bfloat16()))
+
+    @torch.no_grad()
+    def test_tail_write_with_key_norm_and_query_quant(self):
+        from sglang.kernels.ops.attention.dsa.triton_hadamard_quant import (
+            fused_hadamard_act_quant,
+            prepare_hadamard_act_quant,
+        )
+        from sglang.kernels.ops.attention.fla.layernorm_gated import _layer_norm_fwd
+
+        pool_size, n, bs = 4, TOKENS, 3
+        d = INDEX_HEAD_DIM
+        pool = type(
+            "Pool",
+            (),
+            dict(
+                page_size=256,
+                index_head_dim=d,
+                index_page_size=64,
+                index_kpool=pool_size,
+                tail_extra_slots=n,
+                quant_block_size=128,
+            ),
+        )()
+        tail_size = pool_size + n
+        k_norm = LayerNorm(d, dtype=torch.float32).cuda()
+        k_norm.weight.uniform_(0.5, 1.5)
+        k_norm.bias.uniform_(-0.1, 0.1)
+        # one fp32 projection: key | score | head gates, plus two MoE padding rows
+        proj = torch.randn(bs * n + 2, 2 * d + N_HEADS, device="cuda")
+        query = torch.randn(bs * n + 2, N_HEADS, d, device="cuda").bfloat16()
+        ape = torch.randn(pool_size, d, device="cuda")
+        tail_k0 = torch.randn(bs, tail_size, d, device="cuda").bfloat16()
+        tail_s0 = torch.randn_like(tail_k0)
+        page_nbytes = 64 * d + 64 * 4
+        softmax_scale = d**-0.5 * N_HEADS**-0.5
+
+        def run(key, key_norm=None, query_quant=None):
+            buf = torch.zeros((2 * bs, page_nbytes), dtype=torch.uint8, device="cuda")
+            tail_k, tail_s = tail_k0.clone(), tail_s0.clone()
+            kpool_write_tail_and_maybe_compress(
+                pool=pool,
+                buf=buf,
+                key=key[: bs * n],
+                score=proj[: bs * n, d : 2 * d],
+                tail_k=tail_k,
+                tail_score=tail_s,
+                ape=ape,
+                req_pool_indices=torch.arange(bs, dtype=torch.int64, device="cuda"),
+                write_start=torch.full((bs,), 3, dtype=torch.int32, device="cuda"),
+                tail_logical_start=torch.zeros(bs, dtype=torch.int32, device="cuda"),
+                write_loc=torch.arange(2 * bs, dtype=torch.int64, device="cuda").view(
+                    bs, 2
+                ),
+                out_cache_loc=torch.arange(
+                    1, bs * n + 1, dtype=torch.int64, device="cuda"
+                ),
+                num_draft_tokens=n,
+                round_scale=True,
+                key_norm=key_norm,
+                query_quant=query_quant,
+            )
+            return buf, tail_k, tail_s
+
+        key = torch.empty(proj.shape[0], d, dtype=torch.bfloat16, device="cuda")
+        _layer_norm_fwd(
+            proj[:, :d], k_norm.weight, k_norm.bias, k_norm.variance_epsilon, out=key
+        )
+        want = run(key)
+        want_q = fused_hadamard_act_quant(
+            query,
+            d,
+            "ue8m0",
+            weights=proj[:, 2 * d :],
+            softmax_scale=softmax_scale,
+        )
+
+        query_quant = prepare_hadamard_act_quant(
+            query, d, "ue8m0", proj[:, 2 * d :], softmax_scale
+        )
+        got = run(
+            proj[:, :d],
+            key_norm=(k_norm.weight, k_norm.bias, k_norm.variance_epsilon),
+            query_quant=query_quant,
+        )
+        for a, b in zip(query_quant[0], want_q):
+            self.assertTrue(torch.equal(a, b))
+        torch.testing.assert_close(got[2], want[2], atol=0, rtol=0)
+        k_diff = (got[1].float() - want[1].float()).abs().max().item()
+        self.assertLessEqual(k_diff, 2e-2)
+        buf_same = (got[0] == want[0]).float().mean().item()
+        self.assertGreater(buf_same, 0.99)
 
 
 if __name__ == "__main__":

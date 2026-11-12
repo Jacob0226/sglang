@@ -37,7 +37,8 @@ def _hadamard_pm1(n: int, device: str, dtype: torch.dtype) -> torch.Tensor:
 
 
 @triton.jit
-def _hadamard_quant_kernel(
+def _hadamard_quant_block(
+    pid,
     x_ptr,
     h_ptr,
     y_ptr,
@@ -49,12 +50,13 @@ def _hadamard_quant_kernel(
     fp8_max,
     fp8_min,
     softmax_scale,
+    w_row_stride,
+    W_COLS: tl.constexpr,
     ROUND_SCALE: tl.constexpr,
     FUSE_WEIGHTS: tl.constexpr,
     N: tl.constexpr,
     BLOCK_M: tl.constexpr,
 ):
-    pid = tl.program_id(0)
     rows = pid * BLOCK_M + tl.arange(0, BLOCK_M)
     rmask = rows < M
     n = tl.arange(0, N)
@@ -80,21 +82,67 @@ def _hadamard_quant_kernel(
     tl.store(s_ptr + rows, s, mask=rmask)
 
     if FUSE_WEIGHTS:
-        w = tl.load(w_ptr + rows, mask=rmask, other=0.0).to(tl.float32)
+        w_offs = (rows // W_COLS) * w_row_stride + rows % W_COLS
+        w = tl.load(w_ptr + w_offs, mask=rmask, other=0.0).to(tl.float32)
         tl.store(wo_ptr + rows, w * s * softmax_scale, mask=rmask)
 
 
-def fused_hadamard_act_quant(
-    x: torch.Tensor,
-    block_size: int = 128,
-    scale_fmt: Optional[str] = None,
-    weights: Optional[torch.Tensor] = None,
-    softmax_scale: float = 1.0,
+@triton.jit
+def _hadamard_quant_kernel(
+    x_ptr,
+    h_ptr,
+    y_ptr,
+    s_ptr,
+    w_ptr,
+    wo_ptr,
+    M,
+    inv_sqrt_n,
+    fp8_max,
+    fp8_min,
+    softmax_scale,
+    w_row_stride,
+    W_COLS: tl.constexpr,
+    ROUND_SCALE: tl.constexpr,
+    FUSE_WEIGHTS: tl.constexpr,
+    N: tl.constexpr,
+    BLOCK_M: tl.constexpr,
 ):
-    """Fuse Hadamard rotation and block FP8 quantization.
+    _hadamard_quant_block(
+        tl.program_id(0),
+        x_ptr,
+        h_ptr,
+        y_ptr,
+        s_ptr,
+        w_ptr,
+        wo_ptr,
+        M,
+        inv_sqrt_n,
+        fp8_max,
+        fp8_min,
+        softmax_scale,
+        w_row_stride,
+        W_COLS,
+        ROUND_SCALE,
+        FUSE_WEIGHTS,
+        N,
+        BLOCK_M,
+    )
 
-    The last dimension must be one power-of-two quantization group. If
-    ``weights`` is supplied, also return ``weights * scale * softmax_scale``.
+
+HADAMARD_QUANT_BLOCK_M = 32
+
+
+def prepare_hadamard_act_quant(
+    x: torch.Tensor,
+    block_size: int,
+    scale_fmt: Optional[str],
+    weights: Optional[torch.Tensor],
+    softmax_scale: float,
+):
+    """Allocate outputs and build the `_hadamard_quant_block` arguments.
+
+    Returns ``(outputs, args, constexprs, num_blocks)``; ``outputs`` is what
+    `fused_hadamard_act_quant` returns once the kernel has run.
     """
     assert x.is_contiguous(), "input must be contiguous"
     n = x.size(-1)
@@ -113,14 +161,18 @@ def fused_hadamard_act_quant(
             f"weights {tuple(weights.shape)} must match "
             f"x.shape[:-1] {tuple(x.shape[:-1])}"
         )
-        w_in = weights.contiguous().view(-1)
+        w_in = weights.reshape(-1, weights.shape[-1])
+        if w_in.stride(-1) != 1:
+            w_in = w_in.contiguous()
+        w_row_stride, w_cols = w_in.stride(0), w_in.shape[-1]
         w_out = torch.empty(m, dtype=torch.float32, device=x.device)
     else:
         w_in = x2
         w_out = s.view(-1)
+        w_row_stride, w_cols = 0, 1
 
-    block_m = 32
-    _hadamard_quant_kernel[(triton.cdiv(m, block_m),)](
+    outputs = (y, s, w_out.view(*weights.shape, 1)) if fuse_weights else (y, s)
+    args = (
         x2,
         h,
         y.view(-1, n),
@@ -132,11 +184,32 @@ def fused_hadamard_act_quant(
         _FP8_MAX,
         -_FP8_MAX,
         float(softmax_scale),
+        w_row_stride,
+    )
+    constexprs = dict(
+        W_COLS=w_cols,
         ROUND_SCALE=scale_fmt is not None,
         FUSE_WEIGHTS=fuse_weights,
         N=n,
-        BLOCK_M=block_m,
+        BLOCK_M=HADAMARD_QUANT_BLOCK_M,
     )
-    if fuse_weights:
-        return y, s, w_out.view(*weights.shape, 1)
-    return y, s
+    return outputs, args, constexprs, triton.cdiv(m, HADAMARD_QUANT_BLOCK_M)
+
+
+def fused_hadamard_act_quant(
+    x: torch.Tensor,
+    block_size: int = 128,
+    scale_fmt: Optional[str] = None,
+    weights: Optional[torch.Tensor] = None,
+    softmax_scale: float = 1.0,
+):
+    """Fuse Hadamard rotation and block FP8 quantization.
+
+    The last dimension must be one power-of-two quantization group. If
+    ``weights`` is supplied, also return ``weights * scale * softmax_scale``.
+    """
+    outputs, args, constexprs, num_blocks = prepare_hadamard_act_quant(
+        x, block_size, scale_fmt, weights, softmax_scale
+    )
+    _hadamard_quant_kernel[(num_blocks,)](*args, **constexprs)
+    return outputs
