@@ -132,6 +132,7 @@ def _router_triton_kernel(
     RENORMALIZE_EPSILON: tl.constexpr,
     USE_PDL: tl.constexpr,
     SCORES_SPLIT_K: tl.constexpr,  # > 1: scores are split-K partials, summed in order
+    PAD_ROUTED_ID: tl.constexpr,  # padded rows' routed id; -1 also clears shared ids
     stride_bias,
     stride_bias_alt,
     stride_input_ids,
@@ -312,7 +313,11 @@ def _router_triton_kernel(
         selected_idx = tl.where(is_shared, shared_idx, selected_idx)
     if HAS_PADDING:
         selected_vals = tl.where(live_m[:, None], selected_vals, 0.0)
-        selected_idx = tl.where(live_m[:, None], selected_idx, -1)
+        if PAD_ROUTED_ID < 0:
+            selected_idx = tl.where(live_m[:, None], selected_idx, -1)
+        else:
+            pad_idx = tl.where(offs_k[None, :] >= K_ROUTED, selected_idx, PAD_ROUTED_ID)
+            selected_idx = tl.where(live_m[:, None], selected_idx, pad_idx)
 
     out_w_ptr = (
         out_weights_ptr + offs_m[:, None] * stride_wm + offs_k[None, :] * stride_wk
@@ -365,6 +370,7 @@ def moe_fused_gate(
     renormalize_epsilon: float = 0.0,
     packed_out: Optional[torch.Tensor] = None,
     sqrtsoftplus_log1p: bool = False,
+    padded_routed_id: int = -1,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Triton fused router: scoring + bias + topk + (optional) renorm/scale.
 
@@ -373,7 +379,9 @@ def moe_fused_gate(
     within). ``scores`` contains raw GEMM logits, ``[M, N]``, or their fp32 split-K
     partials ``[S, M, N]``, which the kernel sums over S in order first.
 
-    Rows past the device scalar ``num_token_non_padded`` return zero weights and -1 ids.
+    Rows past the device scalar ``num_token_non_padded`` return zero weights and -1 ids,
+    or, with ``padded_routed_id >= 0``, that routed id and the usual shared ids (the
+    aiter MoE kernels on ROCm cannot take -1).
     Positive ``renormalize_epsilon`` uses ``sum + epsilon`` instead of the zero-sum guard.
     ``sqrtsoftplus_log1p`` evaluates sqrtsoftplus through ``log1p`` and ranks NaNs first
     (DeepSeek-V4.1); off, the DeepSeek-V4 formula and NaN order are kept.
@@ -495,6 +503,7 @@ def moe_fused_gate(
     # as the Triton kernel below.
     if (
         split_k == 1
+        and padded_routed_id < 0
         and moe_softcapping == 0.0
         and moe_route_warp.covered(
             scores.dtype,
@@ -597,6 +606,7 @@ def moe_fused_gate(
         RENORMALIZE_EPSILON=renormalize_epsilon,
         USE_PDL=use_pdl,
         SCORES_SPLIT_K=split_k,
+        PAD_ROUTED_ID=padded_routed_id,
         stride_bias=bias.stride(0) if bias is not None else 0,
         stride_bias_alt=bias_alt.stride(0) if bias_alt is not None else 0,
         stride_input_ids=input_ids.stride(0) if input_ids is not None else 0,

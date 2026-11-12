@@ -503,6 +503,19 @@ def fused_kda_conv_gating_verify(
         and 3 <= B <= 16
     ):
         BV = KDA_VERIFY_BLOCK_V_HIP
+    if (
+        is_hip_runtime()
+        and cache_ring
+        and num_warps == 1
+        and T == 6
+        and H == HV == 16
+        and K == V == 128
+        and conv_weight.dtype == torch.float32
+        and B <= 16
+    ):
+        # ReplaySSM ring on MI355X, us per call vs the unfused pair: B2 12.5 vs 13.1,
+        # B6 16.1 vs 18.3, B12 23.0 vs 24.7, B16 25.3 vs 26.9.
+        BV = 8 if B <= 4 else 16 if B <= 8 else 32
     NV = triton.cdiv(V, BV)
 
     a2 = a.reshape(seq_len, HV * K)
