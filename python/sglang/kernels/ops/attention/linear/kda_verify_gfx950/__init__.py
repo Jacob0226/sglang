@@ -64,7 +64,8 @@ def kda_verify_gfx950_supported(
         and conv_bias is None
         and use_qk_l2norm_in_kernel
         and mixed_qkv.dtype == a.dtype == b.dtype == torch.bfloat16
-        and conv_weight.dtype == ssm_states.dtype == torch.float32
+        and conv_weight.dtype == torch.float32
+        and ssm_states.dtype in (torch.float32, torch.bfloat16)
         and A_log.dtype == dt_bias.dtype == torch.float32
         and conv_state.dtype == torch.bfloat16
         and mixed_qkv.stride(-1) == 1
@@ -120,7 +121,14 @@ def kda_verify_gfx950(
     iw = intermediate_conv_window
     iw_s = iw.stride() if iw is not None else (0, 0, 0, 0)
     launch = create_kda_verify_kernel(
-        T, bvc, num_q_heads, HV, float(lower_bound), float(scale), iw is not None
+        T,
+        bvc,
+        num_q_heads,
+        HV,
+        float(lower_bound),
+        float(scale),
+        iw is not None,
+        ssm_states.dtype == torch.bfloat16,
     )
     ptr = lambda t: 0 if t is None else t.data_ptr()
     _run_compiled(

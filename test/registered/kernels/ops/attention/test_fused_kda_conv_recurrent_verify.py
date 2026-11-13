@@ -358,5 +358,49 @@ def test_gfx950_ring_matches_unfused(case):
     _compare_case(case, use_ring=True, weight_dtype=torch.float32)
 
 
+@pytest.mark.skipif(not _is_gfx950(), reason="gfx950 FlyDSL kernel")
+@pytest.mark.parametrize("case", _GFX950_RING_CASES)
+def test_gfx950_ring_bf16_state_matches_fp32(case):
+    # A bf16 pool is widened on load, so it must match the fp32 pool holding the
+    # same values bit for bit.
+    B, T, H, HV, K, V, W, has_bias, lower_bound, neg_slot, seed = case
+    inp = _make_inputs(B, T, H, HV, K, V, W, has_bias, neg_slot, seed, torch.float32)
+    inp_bf16 = dict(inp, ssm=inp["ssm"].to(torch.bfloat16))
+    inp["ssm"] = inp_bf16["ssm"].float()
+    assert kda_verify_gfx950_supported(
+        mixed_qkv=inp["mixed"],
+        conv_weight=inp["w"],
+        conv_bias=None,
+        conv_state=inp["conv_pool"].transpose(-1, -2),
+        intermediate_conv_window=inp["win_pool"].transpose(-1, -2),
+        a=inp["a"],
+        b=inp["b"],
+        A_log=inp["A_log"],
+        dt_bias=inp["dt_bias"],
+        ssm_states=inp_bf16["ssm"],
+        T=T,
+        num_q_heads=H,
+        num_v_heads=HV,
+        head_k_dim=K,
+        head_v_dim=V,
+        lower_bound=lower_bound,
+        use_qk_l2norm_in_kernel=True,
+    )
+    template = _make_ring_buffers(H, HV, K, V, slots=max(8, B + 2))
+    rings32 = {name: buf.clone() for name, buf in template.items()}
+    rings16 = {name: buf.clone() for name, buf in template.items()}
+    o32, _, win32, _ = _run_fused(
+        inp, B, T, H, HV, K, V, lower_bound, None, rings=rings32
+    )
+    o16, _, win16, _ = _run_fused(
+        inp_bf16, B, T, H, HV, K, V, lower_bound, None, rings=rings16
+    )
+    valid = [i for i, slot in enumerate(inp["idx_vals"]) if slot >= 0]
+    assert torch.equal(o16.reshape(B, T, HV, V)[valid], o32.reshape(B, T, HV, V)[valid])
+    assert torch.equal(win16, win32)
+    for name in template:
+        assert torch.equal(rings16[name], rings32[name]), name
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__]))

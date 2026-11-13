@@ -1652,10 +1652,14 @@ class KDAAttnBackend(MambaAttnBackendBase):
             or (layer.bias is not None and layer.bias.dtype != layer.conv_weights.dtype)
         ):
             return False
+        # The ring path only reads the state; kda_verify_gfx950 widens a bf16 pool on load.
+        state_dtypes = (
+            (torch.float32, torch.bfloat16) if gfx950_ring else (torch.float32,)
+        )
         if (
             layer.A_log.dtype != torch.float32
             or layer.dt_bias.dtype != torch.float32
-            or ssm_states.dtype != torch.float32
+            or ssm_states.dtype not in state_dtypes
         ):
             return False
         if replayssm_on:

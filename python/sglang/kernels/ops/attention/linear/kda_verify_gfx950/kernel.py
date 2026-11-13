@@ -5,7 +5,8 @@ safe-gate delta rule over T draft tokens, K = V = 128, one KDA head per (q, k, v
 One CTA of 256 threads per (request, v head, BVC-wide V tile). Threads 0..127 convolve
 the q channels and compute the gate, threads 128..255 convolve the k channels and the
 tile's v channels and compute beta; the results go through LDS. The recurrence keeps a
-128 x BVC fp32 state tile in registers: 8 adjacent lanes split K (lane ks owns float4
+128 x BVC fp32 state tile in registers (a bf16 state pool is widened on load; verify
+never writes the state): 8 adjacent lanes split K (lane ks owns float4
 groups ks, ks + 8, ...) and reduce a column's dot products with DPP, each thread holding
 BVC / 32 columns, 32 apart.
 
@@ -126,12 +127,14 @@ def create_kda_verify_kernel(
     lower_bound: float,
     scale: float,
     has_iw: bool,
+    state_bf16: bool = False,
 ):
     TT, BVC, H, HV = T_, block_v, num_q_heads, num_v_heads
     G = HV // H
     VPT = BVC // _NCG
     LAG = _LAG[BVC]
     STATE_SLOT = HV * _KD * _KD
+    STATE_BYTES = 2 if state_bf16 else 4
 
     @fx.struct
     class SharedStorage:
@@ -142,7 +145,8 @@ def create_kda_verify_kernel(
         ss: fx.Array[fx.Float32, 4 * TT, 16]
 
     @flyc.kernel(
-        name=f"kda_verify_t{TT}_v{BVC}_h{H}_hv{HV}_iw{int(has_iw)}",
+        name=f"kda_verify_t{TT}_v{BVC}_h{H}_hv{HV}_iw{int(has_iw)}"
+        + ("_sbf16" if state_bf16 else ""),
         known_block_size=[_THREADS, 1, 1],
     )
     def kernel(
@@ -230,13 +234,14 @@ def create_kda_verify_kernel(
         ]
         b_row = bos + fx.min(ch, TT - 1)
         bb = fx.Float32(fx.BFloat16(_load(b, b_row * b_stride + hv, T.bf16)))
-        st_base = state + fx.Int64(fx.max(h0, 0)) * fx.Int64(STATE_SLOT * 4)
+        st_base = state + fx.Int64(fx.max(h0, 0)) * fx.Int64(STATE_SLOT * STATE_BYTES)
+        state_t = T.bf16 if state_bf16 else T.f32
         hs = []
         for j in range_constexpr(VPT):
             row = (hv * _KD + v0 + cg + _NCG * j) * _KD
             hs.append(
                 [
-                    fx.Vector(_load(st_base, row + (i * _KSPLIT + ks) * 4, T.f32, 4))
+                    fx.Vector(_load(st_base, row + (i * _KSPLIT + ks) * 4, state_t, 4))
                     for i in range(_KG)
                 ]
             )
@@ -302,7 +307,7 @@ def create_kda_verify_kernel(
         alive = h0 >= 0
         hsf = [
             [
-                alive.select(hs[j][i // 4][i % 4], fx.Float32(0.0))
+                alive.select(fx.Float32(hs[j][i // 4][i % 4]), fx.Float32(0.0))
                 for i in range(4 * _KG)
             ]
             for j in range(VPT)
