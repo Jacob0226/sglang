@@ -123,12 +123,16 @@ def _kpool_indexer_tp_split(
         return None
     if reqs < max(world, envs.SGLANG_DSA_KPOOL_INDEXER_TP_SPLIT_MIN_REQS.get()):
         return None
-    bounds = tuple(r * reqs // world for r in range(world + 1))
+    # Whole blocks of reqs_per_rank requests in rank order (the last ranks may
+    # get fewer or none): the gathered top-k holds the real rows in order up
+    # front, so no rank pads and nothing is re-packed after the gather.
+    per = -(-reqs // world)
+    bounds = tuple(min(r * per, reqs) for r in range(world + 1))
     return _KpoolTpSplit(
         group=group,
         rank=group.rank_in_group,
         bounds=bounds,
-        reqs_per_rank=-(-reqs // world),
+        reqs_per_rank=per,
         next_n=next_n,
     )
 
@@ -911,6 +915,7 @@ class IndexerKPool(MultiPlatformOp):
         out_rows: Optional[int] = None,
         page_table_row_index: Optional[torch.Tensor] = None,
         topk_v2_plan: Optional[torch.Tensor] = None,
+        pad_rows_unset: bool = False,
     ) -> torch.Tensor:
         from sglang.srt.layers.attention.dsa.kpool_fp8_index import (
             topk_from_pooled_history_logits,
@@ -940,6 +945,7 @@ class IndexerKPool(MultiPlatformOp):
             out_rows=out_rows,
             page_table_row_index=page_table_row_index,
             topk_v2_plan=topk_v2_plan,
+            pad_rows_unset=pad_rows_unset,
         )
 
     @staticmethod
@@ -1338,28 +1344,35 @@ class IndexerKPool(MultiPlatformOp):
         rows_per = split.reqs_per_rank * next_n
         reqs = slice(req_lo, req_hi) if next_n > 1 else rows
 
-        logits = aiter_paged_mqa_logits(
-            q_fp8[rows],
-            kv_cache_fp8,
-            weights[rows],
-            mqa_seqlens[reqs],
-            mqa_block_tables[reqs],
-            pool_max_seq_len,
-            preshuffle=True,
-            kv_block_size=kv_block_size,
-            next_n=next_n,
-        )
-        pool_lens = pool_seqlens[rows]
-        page_table_1, topk_offsets, _ = self._kpool_fused_topk_mapping(metadata)
-        local = self._topk_from_kpool_logits(
-            logits=logits,
-            pool_lens=pool_lens,
-            topk_v2_plan=build_kpool_topk_v2_plan(pool_lens),
-            seq_lens=seqlens_32[rows],
-            page_table=_slice_rows(tensor=page_table_1, rows=rows),
-            topk_offsets=_slice_rows(tensor=topk_offsets, rows=rows),
-            out_rows=rows_per if rows.stop - rows.start < rows_per else None,
-        )
+        # Rows past this rank's requests land past the real rows of the
+        # gather, which only the first n_real rows of are read.
+        if req_hi == req_lo:
+            cols = self.index_topk + self.index_kpool - 1
+            local = q_fp8.new_empty((rows_per, cols), dtype=torch.int32)
+        else:
+            logits = aiter_paged_mqa_logits(
+                q_fp8[rows],
+                kv_cache_fp8,
+                weights[rows],
+                mqa_seqlens[reqs],
+                mqa_block_tables[reqs],
+                pool_max_seq_len,
+                preshuffle=True,
+                kv_block_size=kv_block_size,
+                next_n=next_n,
+            )
+            pool_lens = pool_seqlens[rows]
+            page_table_1, topk_offsets, _ = self._kpool_fused_topk_mapping(metadata)
+            local = self._topk_from_kpool_logits(
+                logits=logits,
+                pool_lens=pool_lens,
+                topk_v2_plan=build_kpool_topk_v2_plan(pool_lens),
+                seq_lens=seqlens_32[rows],
+                page_table=_slice_rows(tensor=page_table_1, rows=rows),
+                topk_offsets=_slice_rows(tensor=topk_offsets, rows=rows),
+                out_rows=rows_per if rows.stop - rows.start < rows_per else None,
+                pad_rows_unset=True,
+            )
 
         world = split.group.world_size
         gathered = local.new_empty((world * rows_per, local.shape[1]))
@@ -1368,19 +1381,10 @@ class IndexerKPool(MultiPlatformOp):
             gathered.view(torch.float32), local.contiguous().view(torch.float32)
         )
         n_real = split.bounds[-1] * next_n
-        counts = [
-            (split.bounds[r + 1] - split.bounds[r]) * next_n for r in range(world)
-        ]
-        if all(c == rows_per for c in counts) and num_q_padded == n_real:
-            return gathered
+        if num_q_padded == n_real:
+            return gathered[:n_real]
         out = gathered.new_full((num_q_padded, local.shape[1]), -1)
-        if all(c == rows_per for c in counts):
-            out[:n_real] = gathered[:n_real]
-        else:
-            torch.cat(
-                [gathered[r * rows_per : r * rows_per + c] for r, c in enumerate(counts)],
-                out=out[:n_real],
-            )
+        out[:n_real] = gathered[:n_real]
         return out
 
     def _kpool_topk_by_row_chunks(
