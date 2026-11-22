@@ -982,9 +982,12 @@ def eagle_sample(
                 else get_parallel().tp_group
             )
             if tp_group.world_size > 1:
-                tp_group.broadcast(predict, src=0)
-                tp_group.broadcast(accept_index, src=0)
-                tp_group.broadcast(num_correct_drafts, src=0)
+                if verify_out is not None:
+                    tp_group.broadcast(verify_out, src=0)
+                else:
+                    tp_group.broadcast(predict, src=0)
+                    tp_group.broadcast(accept_index, src=0)
+                    tp_group.broadcast(num_correct_drafts, src=0)
     elif vocab_shard is not None:
         # temperature-only rows: a Gumbel-max target sample per row, then the greedy
         # check against it (exact for a topk-1 chain, whose drafts are deterministic)
