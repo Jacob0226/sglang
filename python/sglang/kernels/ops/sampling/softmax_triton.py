@@ -55,8 +55,15 @@ def _normalize_kernel(
     vocab_size,
     num_splits,
     rows_per_request,
+    seed_ptr,
+    top_ks,
+    race_vals,
+    race_indices,
     BLOCK: tl.constexpr,
     SPLITS_BLOCK: tl.constexpr,
+    RACE: tl.constexpr = False,
+    HAS_TOP_KS: tl.constexpr = False,
+    TINY: tl.constexpr = 1.1754943508222875e-38,
 ):
     row = tl.program_id(0).to(tl.int64)
     split = tl.program_id(1)
@@ -74,6 +81,20 @@ def _normalize_kernel(
     x = tl.load(logits + row * logits_row_stride + offsets, mask=mask, other=0.0)
     p = tl.exp(x / t - m) / s
     tl.store(probs + row * probs_row_stride + offsets, p, mask=mask)
+    if RACE:
+        # Same scores as gumbel_fused._race_partial_kernel, on the in-register p.
+        greedy = False
+        if HAS_TOP_KS:
+            greedy = tl.load(top_ks + row) <= 1
+        if greedy:
+            scores = p
+        else:
+            u = tl.rand(tl.load(seed_ptr), (row * vocab_size + offsets).to(tl.int32))
+            scores = p / tl.maximum(-tl.log(tl.maximum(u, TINY)), TINY)
+        scores = tl.where(mask & (scores == scores), scores, -1.0)
+        out = row * num_splits + split
+        tl.store(race_vals + out, tl.max(scores, axis=0))
+        tl.store(race_indices + out, split * BLOCK + tl.argmax(scores, axis=0))
 
 
 def _split_geometry(rows: int, vocab_size: int):
@@ -172,6 +193,10 @@ def temperature_softmax(
         vocab_size,
         num_splits,
         rows_per_request,
+        t,
+        t,
+        t,
+        t,
         BLOCK=block,
         SPLITS_BLOCK=triton.next_power_of_2(num_splits),
         num_warps=8,

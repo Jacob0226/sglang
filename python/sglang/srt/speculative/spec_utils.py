@@ -279,13 +279,29 @@ def sample_draft_proposal(
     (p - q)+ it resamples from is p itself. Both arms commit the target argmax,
     which is what greedy means. Drop that renorm and this stops holding.
     """
+    race = (
+        _is_hip and sampling_seed is None and envs.SGLANG_OPT_USE_GUMBEL_SAMPLE.get()
+    )
+    if race:
+        from sglang.kernels.ops.sampling.gumbel_fused import softmax_race_sample
+
+        assert top_ks is None or top_ks.device == next_token_logits.device
+        fused = softmax_race_sample(
+            next_token_logits,
+            temperatures,
+            top_ks,
+            out=probs_out,
+            positions=advance_positions,
+            draft_tokens=draft_tokens,
+            draft_token_column=draft_token_column,
+        )
+        if fused is not None:
+            return fused
     probs = sampling_softmax(
         next_token_logits, temperatures=temperatures, out=probs_out
     )
     if (
-        _is_hip
-        and sampling_seed is None
-        and envs.SGLANG_OPT_USE_GUMBEL_SAMPLE.get()
+        race
         and probs.dtype == torch.float32
         and probs.stride(-1) == 1
     ):
