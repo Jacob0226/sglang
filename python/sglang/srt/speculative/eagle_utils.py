@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 import math
 from contextlib import contextmanager
@@ -541,13 +542,12 @@ def _verify_coins(
             draft_token_num=draft_token_num,
             device=device,
         )
-    # coins for rejection sampling
-    coins = torch.rand_like(candidates, dtype=torch.float32, device=device)
-    # coins for final sampling
-    coins_for_final_sampling = torch.rand(
-        (candidates.shape[0],), dtype=torch.float32, device=device
-    )
-    return coins, coins_for_final_sampling
+    # One draw: rejection coins shaped like candidates, then one final-sampling
+    # coin per request.
+    bs = candidates.shape[0]
+    n = candidates.numel()
+    uniforms = torch.rand((n + bs,), dtype=torch.float32, device=device)
+    return uniforms[:n].view(candidates.shape), uniforms[n:]
 
 
 def _verify_uses_greedy(
@@ -1322,9 +1322,17 @@ def _verify_outputs(
     predict = out[:rows]
     accept_index = out[rows : rows + bs * depth].view(bs, depth)
     if init:
-        predict.zero_()
-        accept_index.fill_(-1)
+        out[: rows + bs * depth].copy_(_verify_outputs_init(rows, bs * depth, device))
     return predict, accept_index, out[rows + bs * depth :], out
+
+
+@functools.lru_cache(maxsize=256)
+def _verify_outputs_init(rows: int, num_accept: int, device) -> torch.Tensor:
+    """rows zeros then num_accept -1s: the packed predict / accept_index init,
+    applied with one copy instead of a zero_ and a fill_."""
+    init = torch.full((rows + num_accept,), -1, dtype=torch.int32, device=device)
+    init[:rows] = 0
+    return init
 
 
 def eagle_prepare_for_decode(batch: ScheduleBatch):
