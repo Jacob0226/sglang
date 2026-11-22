@@ -1788,6 +1788,11 @@ class Envs:
     SGLANG_OPT_SPEC_PACKED_VERIFY_BCAST = EnvBool(
         SGLANG_ENABLE_NV_MEGA_RUNTIME_OPTIMIZATION.get
     )
+    # ROCm gfx950: the EAGLE draft's lm_head GEMM runs in FP8 (per-row weight and
+    # per-token activation scales) at up to 48 rows; the target's stays bf16. Draft
+    # probabilities come from these logits, so rejection sampling stays exact; only
+    # the acceptance rate can move.
+    SGLANG_OPT_DRAFT_FP8_LM_HEAD = EnvBool(False)
     # The scheduler's per-pass TP syncs (request broadcast size, HiCache ready counts)
     # through a shared-memory table when the group shares a host (shm_tag_exchange.py).
     SGLANG_OPT_SCHEDULER_SHM_SYNC = EnvBool(
