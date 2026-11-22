@@ -14,6 +14,7 @@
 
 import logging
 
+from sglang.srt.environ import envs
 from sglang.srt.models.deepseek_nextn import DeepseekV3ForCausalLMNextN
 from sglang.srt.models.glm5_next import Glm5NextForConditionalGeneration
 from sglang.srt.models.utils import WeightsMapper
@@ -47,6 +48,26 @@ class Glm5NextForConditionalGenerationNextN(DeepseekV3ForCausalLMNextN):
         return Glm5NextForConditionalGeneration.hf_to_sglang_mapper | WeightsMapper(
             orig_to_new_substr=draft_rules,
         )
+
+    @classmethod
+    def shared_experts_fusion_disable_reason(cls, hf_config, quant_config):
+        if not envs.SGLANG_OPT_GLM53_NEXTN_FUSED_SHARED_EXPERT.get():
+            return super().shared_experts_fusion_disable_reason(
+                hf_config, quant_config
+            )
+        return Glm5NextForConditionalGeneration.shared_experts_fusion_disable_reason(
+            hf_config, quant_config
+        )
+
+    @classmethod
+    def num_fusable_shared_experts(cls, hf_config) -> int:
+        if not envs.SGLANG_OPT_GLM53_NEXTN_FUSED_SHARED_EXPERT.get():
+            return super().num_fusable_shared_experts(hf_config)
+        text_config = getattr(hf_config, "text_config", hf_config)
+        assert text_config.n_shared_experts == 1, (
+            f"Only 1 fused shared expert is supported for {cls.__name__}"
+        )
+        return text_config.n_shared_experts
 
     def _resolve_nextn_quant_config(self, config, quant_config):
         """Mixed checkpoints list the BF16 NextN block in ``quantization_config.ignore``;

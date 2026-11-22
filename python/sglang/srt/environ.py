@@ -1793,6 +1793,9 @@ class Envs:
     # probabilities come from these logits, so rejection sampling stays exact; only
     # the acceptance rate can move.
     SGLANG_OPT_DRAFT_FP8_LM_HEAD = EnvBool(False)
+    # GLM-5.3-Flash NextN draft: fuse its shared expert into the routed MoE as the
+    # target does (same gate), instead of a separate gate_up / act / down / add.
+    SGLANG_OPT_GLM53_NEXTN_FUSED_SHARED_EXPERT = EnvBool(False)
     # The scheduler's per-pass TP syncs (request broadcast size, HiCache ready counts)
     # through a shared-memory table when the group shares a host (shm_tag_exchange.py).
     SGLANG_OPT_SCHEDULER_SHM_SYNC = EnvBool(
