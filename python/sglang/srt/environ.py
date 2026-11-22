@@ -2291,6 +2291,12 @@ class Envs:
     SGLANG_DSA_PREFILL_DENSE_ATTN_KV_LEN_THRESHOLD = EnvInt(2048)
     SGLANG_DSA_HIP_DISABLE_PRESHUFFLE = EnvBool(False)
     SGLANG_DSA_MQA_LOGITS_FREE_MEM_FRACTION = EnvFloat(0.2)
+    # ROCm k-pool indexer, decode / target verify: each attn-TP rank scores
+    # 1/TP of the requests, then the ranks all-gather the top-k.
+    SGLANG_DSA_KPOOL_INDEXER_TP_SPLIT = EnvBool(False)
+    SGLANG_DSA_KPOOL_INDEXER_TP_SPLIT_MIN_REQS = EnvInt(4)
+    # Eager steps also run the unsplit top-k and log any row that differs.
+    SGLANG_DSA_KPOOL_INDEXER_TP_SPLIT_CHECK = EnvBool(False)
     # Prefill indexer: bf16 instead of fp32 MQA logits, read by a bf16 top-k.
     SGLANG_DSA_INDEXER_BF16_LOGITS = EnvBool(False)
     SGLANG_ENABLE_PCG_DSV2_DUAL_STREAM = EnvBool(False)
