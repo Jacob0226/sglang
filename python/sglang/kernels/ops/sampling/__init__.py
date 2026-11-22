@@ -137,6 +137,11 @@ def argmax(logits: torch.Tensor) -> torch.Tensor:
 
     if logits.is_cuda and argmax_jit.can_argmax(logits):
         return argmax_jit.argmax(logits, index_dtype=torch.int64)
+    if torch.version.hip is not None:
+        from sglang.kernels.ops.sampling import argmax_triton
+
+        if argmax_triton.can_row_argmax(logits):
+            return argmax_triton.row_argmax(logits)
     return torch.argmax(logits, dim=-1)
 
 
