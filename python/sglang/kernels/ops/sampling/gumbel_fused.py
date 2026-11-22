@@ -168,7 +168,35 @@ def race_sample(
         TINY=_TINY,
         num_warps=8,
     )
-    _race_finalize_kernel[(rows,)](
+    _finalize(
+        probs,
+        partial_vals,
+        partial_indices,
+        sample_p,
+        sample_index,
+        seed,
+        advance_seed,
+        positions,
+        draft_tokens,
+        draft_token_column,
+    )
+    return sample_p, sample_index
+
+
+def _finalize(
+    probs,
+    partial_vals,
+    partial_indices,
+    sample_p,
+    sample_index,
+    seed,
+    advance_seed,
+    positions,
+    draft_tokens,
+    draft_token_column,
+):
+    num_splits = partial_vals.shape[1]
+    _race_finalize_kernel[(probs.shape[0],)](
         probs,
         probs.stride(0),
         partial_vals,
@@ -187,4 +215,126 @@ def race_sample(
         BLOCK=triton.next_power_of_2(num_splits),
         num_warps=1,
     )
-    return sample_p, sample_index
+
+
+def softmax_race_sample(
+    logits: torch.Tensor,
+    temperatures: torch.Tensor,
+    top_ks: Optional[torch.Tensor] = None,
+    *,
+    out: Optional[torch.Tensor] = None,
+    positions: Optional[torch.Tensor] = None,
+    draft_tokens: Optional[torch.Tensor] = None,
+    draft_token_column: int = 0,
+) -> Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    """``temperature_softmax`` then ``race_sample``, with the race partials taken
+    in the softmax normalize pass (same draw, one launch and one probs read fewer).
+
+    Returns ``(probs, probs[X], X)``, or None when the split softmax does not apply.
+    """
+    from sglang.kernels.ops.sampling.softmax_triton import (
+        _normalize_kernel,
+        _partial_max_sumexp_kernel,
+        _split_geometry,
+    )
+
+    if (
+        logits.ndim != 2
+        or logits.dtype != torch.float32
+        or logits.stride(1) != 1
+        or not logits.is_cuda
+        or logits.shape[0] == 0
+    ):
+        return None
+    rows, vocab_size = logits.shape
+    t = temperatures.reshape(-1)
+    if (
+        t.shape[0] != rows
+        or t.stride(0) != 1
+        or t.dtype != torch.float32
+        or t.device != logits.device
+    ):
+        return None
+    if positions is not None and (
+        not positions.is_contiguous() or positions.shape[0] != rows
+    ):
+        return None
+    if draft_tokens is not None and (
+        draft_tokens.dtype != torch.int64
+        or draft_tokens.stride(1) != 1
+        or draft_tokens.shape[0] != rows
+    ):
+        return None
+    block, num_splits = _split_geometry(rows, vocab_size)
+    if num_splits == 1:
+        return None
+    if out is None:
+        probs = torch.empty_like(logits)
+    elif (
+        out.shape == logits.shape
+        and out.dtype == torch.float32
+        and out.stride(1) == 1
+    ):
+        probs = out
+    else:
+        return None
+    seed = _seed_state(logits.device)
+    advance_seed = seed is not None
+    if seed is None:
+        seed = torch.randint(
+            0, 2**31 - 1, (1,), dtype=torch.int32, device=logits.device
+        )
+    device = logits.device
+    partial_max = torch.empty((rows, num_splits), dtype=torch.float32, device=device)
+    partial_sum = torch.empty((rows, num_splits), dtype=torch.float32, device=device)
+    race_vals = torch.empty((rows, num_splits), dtype=torch.float32, device=device)
+    race_indices = torch.empty((rows, num_splits), dtype=torch.int32, device=device)
+    _partial_max_sumexp_kernel[(rows, num_splits)](
+        logits,
+        t,
+        partial_max,
+        partial_sum,
+        logits.stride(0),
+        vocab_size,
+        num_splits,
+        1,
+        BLOCK=block,
+        num_warps=8,
+    )
+    _normalize_kernel[(rows, num_splits)](
+        logits,
+        t,
+        partial_max,
+        partial_sum,
+        probs,
+        logits.stride(0),
+        probs.stride(0),
+        vocab_size,
+        num_splits,
+        1,
+        seed,
+        top_ks if top_ks is not None else seed,
+        race_vals,
+        race_indices,
+        BLOCK=block,
+        SPLITS_BLOCK=triton.next_power_of_2(num_splits),
+        RACE=True,
+        HAS_TOP_KS=top_ks is not None,
+        TINY=_TINY,
+        num_warps=8,
+    )
+    sample_p = torch.empty((rows, 1), dtype=torch.float32, device=device)
+    sample_index = torch.empty((rows, 1), dtype=torch.int64, device=device)
+    _finalize(
+        probs,
+        race_vals,
+        race_indices,
+        sample_p,
+        sample_index,
+        seed,
+        advance_seed,
+        positions,
+        draft_tokens,
+        draft_token_column,
+    )
+    return probs, sample_p, sample_index
