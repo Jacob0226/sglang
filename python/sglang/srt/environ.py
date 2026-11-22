@@ -1799,6 +1799,9 @@ class Envs:
     # GLM-5.3-Flash NextN draft on ROCm: requantize its FP8 block-128 experts to
     # MXFP4 at load (the target's expert format), halving the draft MoE's weight reads.
     SGLANG_OPT_GLM53_NEXTN_MXFP4_MOE = EnvBool(False)
+    # ROCm EAGLE verify (argmax on every row without rejection sampling): keep the
+    # target logits vocab-sharded and exchange per-rank argmax keys, not the logits.
+    SGLANG_OPT_HIP_SHARDED_VERIFY = EnvBool(False)
     # The scheduler's per-pass TP syncs (request broadcast size, HiCache ready counts)
     # through a shared-memory table when the group shares a host (shm_tag_exchange.py).
     SGLANG_OPT_SCHEDULER_SHM_SYNC = EnvBool(

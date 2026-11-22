@@ -36,6 +36,7 @@ from sglang.srt.runtime_context import get_spec
 from sglang.srt.speculative.sharded_verify import (
     VocabShard,
     gather_full_logits,
+    hip_argmax_verify,
     key_splits,
     reduce_sharded_token_keys,
     sampling_allows_vocab_shards,
@@ -728,7 +729,7 @@ def _sharded_sampling_applies(
     stays on the stock gathered path.
     """
     return (
-        _is_cuda
+        (_is_cuda or hip_argmax_verify())
         and verify_input.tree_topk == 1
         and grammar_mask is None
         and not watermark
