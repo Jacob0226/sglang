@@ -24,7 +24,10 @@ from safetensors.torch import load_file
 from torch import nn
 from transformers import PretrainedConfig
 
-from sglang.kernels.ops.layernorm.fused_eh_norm import fused_eh_norm
+from sglang.kernels.ops.layernorm.fused_eh_norm import (
+    fused_eh_norm,
+    fused_eh_norm_triton,
+)
 from sglang.srt.environ import envs
 from sglang.srt.eplb.expert_distribution import get_global_expert_distribution_recorder
 from sglang.srt.layers.attention.index_topk_share import IndexTopKShareState
@@ -47,12 +50,13 @@ from sglang.srt.models.deepseek_common.utils import enable_nextn_moe_bf16_cast_t
 from sglang.srt.models.deepseek_v2 import DeepseekV2DecoderLayer, DeepseekV3ForCausalLM
 from sglang.srt.models.utils import WeightsMapper
 from sglang.srt.runtime_context import get_model, get_parallel, get_spec
-from sglang.srt.utils import BumpAllocator, is_cuda, is_npu
+from sglang.srt.utils import BumpAllocator, is_cuda, is_hip, is_npu
 
 logger = logging.getLogger(__name__)
 
 
 _is_cuda = is_cuda()
+_is_hip = is_hip()
 _is_npu = is_npu()
 
 
@@ -209,6 +213,22 @@ class DeepseekModelNextN(nn.Module):
                         self.hnorm.weight,
                         self.enorm.variance_epsilon,
                     )
+                elif (
+                    _is_hip
+                    and hidden_states.dtype in (torch.float16, torch.bfloat16)
+                    and hidden_states.dim() == 2
+                    and hidden_states.stride(1) == 1
+                    and previous_hidden_states.stride(1) == 1
+                    and previous_hidden_states.shape == hidden_states.shape
+                    and hidden_states.shape[1] <= 16384
+                ):
+                    eh_input = fused_eh_norm_triton(
+                        hidden_states,
+                        previous_hidden_states,
+                        self.enorm.weight,
+                        self.hnorm.weight,
+                        self.enorm.variance_epsilon,
+                    )
                 else:
                     eh_input = torch.cat(
                         (
@@ -300,6 +320,9 @@ class DeepseekV3ForCausalLMNextN(DeepseekV3ForCausalLM):
             use_attn_tp_group=get_parallel().enable_dp_lm_head,
         )
         self.logits_processor = LogitsProcessor(config)
+        self.logits_processor.draft_fp8_lm_head = (
+            envs.SGLANG_OPT_DRAFT_FP8_LM_HEAD.get()
+        )
 
     @torch.no_grad()
     def forward(
