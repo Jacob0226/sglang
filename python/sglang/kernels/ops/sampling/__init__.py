@@ -85,15 +85,19 @@ def softmax(
             return softmax_jit.softmax(
                 logits, temperatures, rows_per_request=rows_per_request, out=out
             )
-    if temperatures is not None and rows_per_request > 1:
-        temperatures = temperatures.repeat_interleave(rows_per_request, dim=0)
     if temperatures is not None and logits.is_cuda and torch.version.hip is not None:
         from sglang.kernels.ops.sampling.softmax_triton import (
             temperature_softmax,
         )
 
-        probs = temperature_softmax(logits, temperatures)
+        probs = temperature_softmax(
+            logits, temperatures, out=out, rows_per_request=rows_per_request
+        )
+        if probs is out:
+            return out
     else:
+        if temperatures is not None and rows_per_request > 1:
+            temperatures = temperatures.repeat_interleave(rows_per_request, dim=0)
         if temperatures is not None:
             logits = logits / temperatures
         from sglang.kernels.cake_kernels.sampling import supports_softmax
