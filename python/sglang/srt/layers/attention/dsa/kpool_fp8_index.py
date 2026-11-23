@@ -2017,5 +2017,6 @@ def kpool_write_tail_and_maybe_compress(
         KEY_LN=key_norm is not None,
         QUANT_Q=q_out is not None,
         Q_HEADS=q_heads,
+        num_warps=1 if _is_hip else 4,
     )
     return q_out
