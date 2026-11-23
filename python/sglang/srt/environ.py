@@ -1802,6 +1802,9 @@ class Envs:
     # ROCm EAGLE verify (argmax on every row without rejection sampling): keep the
     # target logits vocab-sharded and exchange per-rank argmax keys, not the logits.
     SGLANG_OPT_HIP_SHARDED_VERIFY = EnvBool(False)
+    # GLM-5.3-Flash on gfx950: run the DSA layers' q_a (fused with kv_a) and q_b
+    # projections in bf16. CK's FP8 block-scale GEMM is latency-bound at decode M.
+    SGLANG_OPT_GLM53_DSA_BF16_QPROJ = EnvBool(False)
     # The scheduler's per-pass TP syncs (request broadcast size, HiCache ready counts)
     # through a shared-memory table when the group shares a host (shm_tag_exchange.py).
     SGLANG_OPT_SCHEDULER_SHM_SYNC = EnvBool(
