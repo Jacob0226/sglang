@@ -42,9 +42,14 @@ else:
 
 
 def hip_argmax_verify() -> bool:
-    """ROCm sharded verify: without rejection sampling its verify commits the argmax
-    of every row, temperature rows included, so greedy keys are stock-equivalent."""
-    return torch.version.hip is not None and envs.SGLANG_OPT_HIP_SHARDED_VERIFY.get()
+    """ROCm without rejection sampling: verify commits the argmax of every row,
+    temperature rows included, so per-rank argmax keys pick the same tokens."""
+    from sglang.srt.runtime_context import get_spec
+
+    return (
+        torch.version.hip is not None
+        and not get_spec().speculative_use_rejection_sampling
+    )
 
 
 def spec_allows_vocab_shards(spec) -> bool:
