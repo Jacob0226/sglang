@@ -320,9 +320,6 @@ class DeepseekV3ForCausalLMNextN(DeepseekV3ForCausalLM):
             use_attn_tp_group=get_parallel().enable_dp_lm_head,
         )
         self.logits_processor = LogitsProcessor(config)
-        self.logits_processor.draft_fp8_lm_head = (
-            envs.SGLANG_OPT_DRAFT_FP8_LM_HEAD.get()
-        )
 
     @torch.no_grad()
     def forward(

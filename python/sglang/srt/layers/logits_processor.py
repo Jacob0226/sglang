@@ -595,7 +595,8 @@ class LogitsProcessor(nn.Module):
         # gather itself (see finish_deferred_gather / deferred_argmax).
         self.defer_verify_gather = False
         self.defer_plain_gather = envs.SGLANG_OPT_DFLASH_DEFER_PLAIN_GATHER.get()
-        # Set by an EAGLE draft model under SGLANG_OPT_DRAFT_FP8_LM_HEAD.
+        # Set by an EAGLE draft model (GLM-5.3-Flash NextN). Draft logits only
+        # propose tokens; the target's bf16 head still decides what is accepted.
         self.draft_fp8_lm_head = False
         self._sharded_verify_eligible = (
             _runtime_optimized_vocab_shards_enabled()

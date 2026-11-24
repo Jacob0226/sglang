@@ -1788,17 +1788,6 @@ class Envs:
     SGLANG_OPT_SPEC_PACKED_VERIFY_BCAST = EnvBool(
         SGLANG_ENABLE_NV_MEGA_RUNTIME_OPTIMIZATION.get
     )
-    # ROCm gfx950: the EAGLE draft's lm_head GEMM runs in FP8 (per-row weight and
-    # per-token activation scales) at up to 48 rows; the target's stays bf16. Draft
-    # probabilities come from these logits, so rejection sampling stays exact; only
-    # the acceptance rate can move.
-    SGLANG_OPT_DRAFT_FP8_LM_HEAD = EnvBool(False)
-    # GLM-5.3-Flash NextN draft: fuse its shared expert into the routed MoE as the
-    # target does (same gate), instead of a separate gate_up / act / down / add.
-    SGLANG_OPT_GLM53_NEXTN_FUSED_SHARED_EXPERT = EnvBool(False)
-    # GLM-5.3-Flash NextN draft on ROCm: requantize its FP8 block-128 experts to
-    # MXFP4 at load (the target's expert format), halving the draft MoE's weight reads.
-    SGLANG_OPT_GLM53_NEXTN_MXFP4_MOE = EnvBool(False)
     # The scheduler's per-pass TP syncs (request broadcast size, HiCache ready counts)
     # through a shared-memory table when the group shares a host (shm_tag_exchange.py).
     SGLANG_OPT_SCHEDULER_SHM_SYNC = EnvBool(

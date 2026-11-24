@@ -16,13 +16,14 @@ import logging
 
 import torch
 
-from sglang.srt.environ import envs
 from sglang.srt.models.deepseek_nextn import DeepseekV3ForCausalLMNextN
 from sglang.srt.models.glm5_next import Glm5NextForConditionalGeneration
 from sglang.srt.models.utils import WeightsMapper
-from sglang.srt.utils import is_hip
+from sglang.srt.utils import is_gfx95_supported, is_hip
 
 logger = logging.getLogger(__name__)
+
+_is_gfx95 = is_hip() and is_gfx95_supported()
 
 
 class Glm5NextForConditionalGenerationNextN(DeepseekV3ForCausalLMNextN):
@@ -54,7 +55,7 @@ class Glm5NextForConditionalGenerationNextN(DeepseekV3ForCausalLMNextN):
 
     @classmethod
     def shared_experts_fusion_disable_reason(cls, hf_config, quant_config):
-        if not envs.SGLANG_OPT_GLM53_NEXTN_FUSED_SHARED_EXPERT.get():
+        if not _is_gfx95:
             return super().shared_experts_fusion_disable_reason(
                 hf_config, quant_config
             )
@@ -64,7 +65,7 @@ class Glm5NextForConditionalGenerationNextN(DeepseekV3ForCausalLMNextN):
 
     @classmethod
     def num_fusable_shared_experts(cls, hf_config) -> int:
-        if not envs.SGLANG_OPT_GLM53_NEXTN_FUSED_SHARED_EXPERT.get():
+        if not _is_gfx95:
             return super().num_fusable_shared_experts(hf_config)
         text_config = getattr(hf_config, "text_config", hf_config)
         assert text_config.n_shared_experts == 1, (
@@ -102,6 +103,7 @@ class Glm5NextForConditionalGenerationNextN(DeepseekV3ForCausalLMNextN):
             quant_config=quant_config,
             prefix=prefix,
         )
+        self.logits_processor.draft_fp8_lm_head = True
 
     def load_weights(self, weights):
         if not hasattr(self, "fuse_qkv_a_proj"):
@@ -119,7 +121,7 @@ class Glm5NextForConditionalGenerationNextN(DeepseekV3ForCausalLMNextN):
         result = Glm5NextForConditionalGeneration.load_weights(
             self, nextn_weights, is_nextn=True
         )
-        if envs.SGLANG_OPT_GLM53_NEXTN_MXFP4_MOE.get() and is_hip():
+        if _is_gfx95:
             self._experts_to_mxfp4()
         return result
 
