@@ -97,6 +97,11 @@ def _slice_rows(
     return None if tensor is None else tensor[rows]
 
 
+# Below this many requests a rank's share of the logits is too small to pay for
+# the top-k all-gather.
+_KPOOL_TP_SPLIT_MIN_REQS = 4
+
+
 class _KpoolTpSplit(NamedTuple):
     group: Any
     rank: int
@@ -111,7 +116,7 @@ def _kpool_indexer_tp_split(
 ) -> Optional[_KpoolTpSplit]:
     # Every input is identical across the group, so all ranks take the same
     # branch and the all-gather cannot diverge.
-    if not (is_hip() and envs.SGLANG_DSA_KPOOL_INDEXER_TP_SPLIT.get()):
+    if not is_hip():
         return None
     mode = forward_batch.forward_mode
     if not (mode.is_decode() or mode.is_target_verify()):
@@ -121,7 +126,7 @@ def _kpool_indexer_tp_split(
     reqs = n_real // next_n
     if world <= 1 or reqs * next_n != n_real:
         return None
-    if reqs < max(world, envs.SGLANG_DSA_KPOOL_INDEXER_TP_SPLIT_MIN_REQS.get()):
+    if reqs < max(world, _KPOOL_TP_SPLIT_MIN_REQS):
         return None
     # Whole blocks of reqs_per_rank requests in rank order (the last ranks may
     # get fewer or none): the gathered top-k holds the real rows in order up
@@ -135,45 +140,6 @@ def _kpool_indexer_tp_split(
         reqs_per_rank=per,
         next_n=next_n,
     )
-
-
-def _check_tp_split_topk(
-    split_topk: torch.Tensor, topk: torch.Tensor, layer_id: int
-) -> None:
-    if split_topk.shape != topk.shape:
-        logger.warning(
-            "kpool indexer TP split, layer %d: shape %s vs %s",
-            layer_id,
-            tuple(split_topk.shape),
-            tuple(topk.shape),
-        )
-        return
-    # The top-k kernels select a set; its order within a row is not defined.
-    a = split_topk.sort(dim=1).values
-    b = topk.sort(dim=1).values
-    diff = a != b
-    bad = diff.any(dim=1).nonzero().flatten().tolist()
-    ordered = int((split_topk != topk).any(dim=1).sum())
-    if bad:
-        logger.warning(
-            "kpool indexer TP split, layer %d: %d of %d rows differ as sets "
-            "(%d of %d entries; %d rows differ in order): %s",
-            layer_id,
-            len(bad),
-            topk.shape[0],
-            int(diff.sum()),
-            diff.numel(),
-            ordered,
-            bad[:16],
-        )
-    else:
-        logger.info(
-            "kpool indexer TP split, layer %d: %d rows match as sets "
-            "(%d differ in order)",
-            layer_id,
-            topk.shape[0],
-            ordered,
-        )
 
 
 def _mqa_logits_row_chunks(
@@ -1255,11 +1221,7 @@ class IndexerKPool(MultiPlatformOp):
                     num_q_padded=num_q_padded,
                     kv_block_size=block_kv,
                 )
-                if not (
-                    envs.SGLANG_DSA_KPOOL_INDEXER_TP_SPLIT_CHECK.get()
-                    and not torch.cuda.is_current_stream_capturing()
-                ):
-                    return topk_split
+                return topk_split
             logits = aiter_paged_mqa_logits(
                 q_fp8,
                 kv_cache_fp8,
@@ -1308,8 +1270,6 @@ class IndexerKPool(MultiPlatformOp):
             topk_offsets=topk_offsets,
             out_rows=num_q_padded if num_q_padded != n_real else None,
         )
-        if use_aiter_paged_mqa and split is not None:
-            _check_tp_split_topk(topk_split, topk_result, layer_id)
         return topk_result
 
     def _get_topk_paged_tp_split(
